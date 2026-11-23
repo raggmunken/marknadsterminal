@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use term_core::names::normalize_name;
 use term_core::{
-    Amount, Cik, Company, Confidence, Counterparty, Direction, Event, Evidence, Location, LogRecord, Period,
+    Amount, Cik, Company, Confidence, Counterparty, Country, Direction, Event, Evidence, Location, LogRecord, Period,
     Relation, ReviewStatus, SanctionEntry, SeriesPoint, StoredRelation, Unit,
 };
 
@@ -110,6 +110,21 @@ CREATE TABLE IF NOT EXISTS location (
     PRIMARY KEY (source, external_id)
 );
 CREATE INDEX IF NOT EXISTS location_owner ON location(owner_key);
+
+CREATE TABLE IF NOT EXISTS country (
+    iso2       TEXT PRIMARY KEY,
+    iso3       TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    region     TEXT NOT NULL,
+    income     TEXT NOT NULL,
+    capital    TEXT,
+    lat        REAL,
+    lon        REAL,
+    gdp_usd    REAL,
+    gdp_year   INTEGER,
+    lei_count  INTEGER,
+    esef_count INTEGER
+);
 
 CREATE TABLE IF NOT EXISTS signal_log (
     seq        INTEGER PRIMARY KEY,
@@ -623,6 +638,56 @@ impl Store {
         Ok(out)
     }
 
+    // ----- countries -----
+
+    /// Insert or refresh a country. A count that is `None` keeps the stored
+    /// value, so that a failed lookup never erases an earlier answer.
+    pub fn upsert_country(&self, c: &Country) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO country (iso2, iso3, name, region, income, capital, lat, lon, gdp_usd, gdp_year, lei_count, esef_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(iso2) DO UPDATE SET iso3 = excluded.iso3, name = excluded.name, region = excluded.region,
+                income = excluded.income, capital = excluded.capital, lat = excluded.lat, lon = excluded.lon,
+                gdp_usd = coalesce(excluded.gdp_usd, country.gdp_usd),
+                gdp_year = coalesce(excluded.gdp_year, country.gdp_year),
+                lei_count = coalesce(excluded.lei_count, country.lei_count),
+                esef_count = coalesce(excluded.esef_count, country.esef_count)",
+            params![c.iso2, c.iso3, c.name, c.region, c.income, c.capital, c.lat, c.lon, c.gdp_usd, c.gdp_year,
+                    c.lei_count.map(|n| n as i64), c.esef_count.map(|n| n as i64)],
+        )?;
+        Ok(())
+    }
+
+    /// Largest economy first. Countries without a figure come last, by name.
+    pub fn countries_of_world(&self) -> Result<Vec<Country>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT iso2, iso3, name, region, income, capital, lat, lon, gdp_usd, gdp_year, lei_count, esef_count
+             FROM country ORDER BY gdp_usd IS NULL, gdp_usd DESC, name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Country {
+                iso2: r.get(0)?,
+                iso3: r.get(1)?,
+                name: r.get(2)?,
+                region: r.get(3)?,
+                income: r.get(4)?,
+                capital: r.get(5)?,
+                lat: r.get(6)?,
+                lon: r.get(7)?,
+                gdp_usd: r.get(8)?,
+                gdp_year: r.get::<_, Option<i64>>(9)?.map(|y| y as u16),
+                lei_count: r.get::<_, Option<i64>>(10)?.map(|n| n as u64),
+                esef_count: r.get::<_, Option<i64>>(11)?.map(|n| n as u64),
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     // ----- signal log -----
 
     /// Append one record. The record must follow the last one stored.
@@ -1027,6 +1092,28 @@ mod tests {
         store.upsert_locations(&[place("a", "Polarvik Castings Ltd", 5.0)]).unwrap();
         let again = store.locations(Some("Polarvik Castings")).unwrap();
         assert_eq!((again.len(), again[0].lat), (1, 5.0));
+    }
+
+    #[test]
+    fn a_failed_count_does_not_erase_an_earlier_one() {
+        let store = Store::open_in_memory().unwrap();
+        let mut se = Country {
+            iso2: "SE".into(), iso3: "SWE".into(), name: "Sweden".into(), region: "Europe".into(), income: "High income".into(),
+            capital: Some("Stockholm".into()), lat: Some(59.3), lon: Some(18.1),
+            gdp_usd: Some(669e9), gdp_year: Some(2025), lei_count: Some(121_615), esef_count: Some(900),
+        };
+        store.upsert_country(&se).unwrap();
+        se.lei_count = None;
+        se.esef_count = Some(950);
+        store.upsert_country(&se).unwrap();
+        let mut small = se.clone();
+        small.iso2 = "AW".into();
+        small.name = "Aruba".into();
+        small.gdp_usd = None;
+        store.upsert_country(&small).unwrap();
+        let all = store.countries_of_world().unwrap();
+        assert_eq!(all.iter().map(|c| c.iso2.as_str()).collect::<Vec<_>>(), ["SE", "AW"], "largest economy first");
+        assert_eq!((all[0].lei_count, all[0].esef_count), (Some(121_615), Some(950)));
     }
 
     #[test]

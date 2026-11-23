@@ -1,0 +1,300 @@
+{
+ "cik": 1467858,
+ "entityName": "GENERAL MOTORS COMPANY",
+ "facts": {
+  "us-gaap": {
+   "Revenues": {
+    "label": "Revenues",
+    "description": "Amount of revenue recognized from goods sold, services rendered, insurance premiums, or other activities that constitute an earning process. Includes, but is not limited to, investment and interest income before deduction of interest expense when recognized as a component of revenue, and sales and trading gain (loss).",
+    "units": {
+     "USD": [
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 156735000000,
+       "accn": "0001467858-23-000029",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-01-31"
+      },
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 156735000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 156735000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28",
+       "frame": "CY2022"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 171842000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 171842000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 171842000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27",
+       "frame": "CY2023"
+      },
+      {
+       "start": "2024-01-01",
+       "end": "2024-12-31",
+       "val": 187442000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "start": "2024-01-01",
+       "end": "2024-12-31",
+       "val": 187442000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27",
+       "frame": "CY2024"
+      },
+      {
+       "start": "2025-01-01",
+       "end": "2025-12-31",
+       "val": 185019000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27",
+       "frame": "CY2025"
+      }
+     ]
+    }
+   },
+   "NetIncomeLoss": {
+    "label": "Net Income (Loss) Attributable to Parent",
+    "description": "The portion of profit or loss for the period, net of income taxes, which is attributable to the parent.",
+    "units": {
+     "USD": [
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 9934000000,
+       "accn": "0001467858-23-000029",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-01-31"
+      },
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 9934000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "start": "2022-01-01",
+       "end": "2022-12-31",
+       "val": 9934000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 10127000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 10127000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "start": "2023-01-01",
+       "end": "2023-12-31",
+       "val": 10127000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27"
+      },
+      {
+       "start": "2024-01-01",
+       "end": "2024-12-31",
+       "val": 6008000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "start": "2024-01-01",
+       "end": "2024-12-31",
+       "val": 6008000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27"
+      },
+      {
+       "start": "2025-01-01",
+       "end": "2025-12-31",
+       "val": 2697000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27"
+      }
+     ]
+    }
+   },
+   "Assets": {
+    "label": "Assets",
+    "description": "Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Assets are probable future economic benefits obtained or controlled by an entity as a result of past transactions or events.",
+    "units": {
+     "USD": [
+      {
+       "end": "2022-12-31",
+       "val": 264037000000,
+       "accn": "0001467858-23-000029",
+       "fy": 2022,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2023-01-31"
+      },
+      {
+       "end": "2022-12-31",
+       "val": 264037000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "end": "2022-12-31",
+       "val": 264037000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28",
+       "frame": "CY2022Q4I"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 273064000000,
+       "accn": "0001467858-24-000031",
+       "fy": 2023,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2024-01-30"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 273064000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "end": "2023-12-31",
+       "val": 273064000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27",
+       "frame": "CY2023Q4I"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 279761000000,
+       "accn": "0001467858-25-000032",
+       "fy": 2024,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2025-01-28"
+      },
+      {
+       "end": "2024-12-31",
+       "val": 279761000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27",
+       "frame": "CY2024Q4I"
+      },
+      {
+       "end": "2025-12-31",
+       "val": 281284000000,
+       "accn": "0001467858-26-000013",
+       "fy": 2025,
+       "fp": "FY",
+       "form": "10-K",
+       "filed": "2026-01-27"
+      }
+     ]
+    }
+   }
+  }
+ }
+}

@@ -91,14 +91,37 @@ cargo run -p term-cli -- reverse GM --ingest 10
 
 Allt i blocket är kört utom raden med `--extractor anthropic`.
 
+## Hela världen
+
+`term world build` hämtar Världsbankens landlista och frågar sedan källorna
+land för land. Resultatet står i [docs/lander.md](docs/lander.md): varje land
+med BNP, antal bolag med LEI hos GLEIF och antal årsredovisningar i det
+europeiska formatet. Siffrorna är räknade av källorna själva.
+
+Det listan visar är vad terminalen kan se i varje land i dag. Den visar inte
+ländernas egna register. Nationella system står bara där projektet har
+undersökt dem, och det är få.
+
+## Räkenskaper och insiders
+
+```sh
+term fin GM        # intäkter, resultat, tillgångar, skulder, eget kapital ur SEC
+term insiders GM   # de senaste insideranmälningarna, som länkar
+```
+
+Räkenskaperna sparas som serier och syns i vyn SERIER. Insideranmälningarna
+listas bara. Köp, sälj och belopp läses inte ut än. Ägare enligt blankett 13F
+är inte inlagt: de lämnas av förvaltaren, inte av bolaget, och kräver SEC:s
+samlade dataset.
+
 ## Fler källor värda att ta in
 
 Funna vid en genomgång 2026-11-23. Ingen av dem är inlagd.
 
 | Källa | Ger | Varför |
 |---|---|---|
-| SEC `companyfacts` och `frames` | Räkenskaper per bolag och per begrepp | Fyller vyn FIN. Ingen nyckel, samma kontaktadress |
-| SEC blankett 4, 13F, 13D och 13G | Insiders och ägare | Fyller vyerna INSIDER och AGARE |
+| SEC `frames` | Ett begrepp för alla bolag samma period | Jämförelser mellan bolag. `companyfacts` är redan inlagt |
+| SEC blankett 4 i detalj, 13F, 13D och 13G | Insiders belopp, och ägare | Blankett 4 listas redan, men läses inte ut |
 | SEC blankett 8-K | Väsentliga händelser | Utlösare för kundchocken |
 | Utskrifter från rapportsamtal | Kunder och leverantörer som nämns muntligt | En MIT-studie byggde kedjor ur 10-K och rapportsamtal |
 | AKShare | Kinesiska marknadsdata | Planens öppna lucka för Kina |

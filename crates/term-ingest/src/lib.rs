@@ -3,6 +3,7 @@
 //! STATUS: run live against EDGAR on 2026-11-23: the company list, the
 //! submissions index, a full annual report and the full text search.
 
+pub mod facts;
 pub mod limiter;
 pub mod search;
 

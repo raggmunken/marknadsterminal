@@ -30,6 +30,7 @@ pub mod openfigi;
 pub mod riksbank;
 pub mod usaspending;
 pub mod usgs;
+pub mod world;
 pub mod worldbank;
 
 use term_ingest::RateLimiter;

@@ -237,6 +237,26 @@ pub struct Location {
     pub external_id: String,
 }
 
+/// One country and what the terminal's sources hold for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Country {
+    pub iso2: String,
+    pub iso3: String,
+    pub name: String,
+    pub region: String,
+    pub income: String,
+    pub capital: Option<String>,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    /// Latest gross domestic product in current US dollars, and its year.
+    pub gdp_usd: Option<f64>,
+    pub gdp_year: Option<u16>,
+    /// Companies with a legal entity identifier registered in the country.
+    pub lei_count: Option<u64>,
+    /// Annual reports in the European electronic format.
+    pub esef_count: Option<u64>,
+}
+
 /// One observation in a time series. `date` is as the source gives it:
 /// a day, or a year for annual series.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

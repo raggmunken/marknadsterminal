@@ -18,6 +18,8 @@ use term_resolve::{merge, Directory, Resolution};
 use term_analysis::{analyze_company, Level};
 use term_core::names::normalize_name;
 use term_core::Location;
+use term_ingest::facts;
+use term_sources::world;
 use term_sources::{ecb, epa_frs, esef, fred, gdacs, gleif, ofac, openfigi, riksbank, usaspending, usgs, worldbank, Http};
 use term_store::{now_unix, Store, Upsert};
 
@@ -133,6 +135,15 @@ enum Command {
         #[command(subcommand)]
         action: SanctionsAction,
     },
+    /// Räkenskaper ur SEC: intäkter, resultat, tillgångar, skulder, eget kapital. Kräver TERM_USER_AGENT
+    Fin { target: String },
+    /// Bolagets senaste insideranmälningar (blankett 4) hos SEC. Kräver TERM_USER_AGENT
+    Insiders { target: String },
+    /// Världen: vad källorna har för varje land
+    World {
+        #[command(subcommand)]
+        action: WorldAction,
+    },
     /// Väg ihop allt som är känt om ett bolag: kedja, granskning, sanktioner, platser, händelser
     Analyze { target: String },
     /// Platser som hör till bolag, så att händelser kan kopplas till kedjan
@@ -153,6 +164,23 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         limit: u32,
     },
+}
+
+#[derive(Subcommand)]
+enum WorldAction {
+    /// Hämta landlistan och fråga källorna land för land. Tar flera minuter
+    Build {
+        /// Fråga bara om de N största ekonomierna
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    /// Visa länderna, största ekonomin först
+    List {
+        #[arg(long, default_value_t = 40)]
+        limit: usize,
+    },
+    /// Skriv hela listan som en Markdown-fil
+    Export { file: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -817,6 +845,127 @@ async fn main() -> Result<()> {
                     }
                     println!("{} motparter jämförda, {hits} träffar.", relations.len());
                     println!("{caveat}");
+                }
+            }
+        }
+
+        Command::Fin { target } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let name = store.company(cik)?.map(|c| c.name).unwrap_or_else(|| format!("CIK {cik}"));
+            let json = edgar_client()?.company_facts(cik).await?;
+            let lines = facts::statement(&json)?;
+            if lines.is_empty() {
+                bail!("SEC har inga årsvärden i US-dollar för {name}");
+            }
+            println!("{name}, årsvärden i miljarder USD ur bolagets egna 10-K (SEC company facts)");
+            for (label, tag, points) in &lines {
+                store.upsert_series("sec-fin", &format!("{} {label}", cik.unpadded()), points)?;
+                let recent: Vec<String> = points
+                    .iter()
+                    .skip(points.len().saturating_sub(4))
+                    .map(|p| format!("{} {:>8.1}", &p.date[..4], p.value / 1e9))
+                    .collect();
+                println!("  {label:<14} {}   (tagg {tag})", recent.join("   "));
+            }
+            println!("Sparat som serier. Se dem i vyn SERIER eller med: term series list");
+        }
+
+        Command::Insiders { target } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let filings = edgar_client()?.filings(cik).await?;
+            let mut forms: Vec<_> = filings.iter().filter(|f| f.form == "4").collect();
+            forms.sort_by(|a, b| b.filing_date.cmp(&a.filing_date));
+            let since = unix_to_iso_minutes(now_unix() - 90 * 86_400)[..10].to_string();
+            let recent = forms.iter().filter(|f| f.filing_date >= since).count();
+            println!("{} insideranmälningar bland de senaste inlämningarna, varav {recent} de senaste 90 dagarna.", forms.len());
+            for f in forms.iter().take(10) {
+                println!("  {}  {}", f.filing_date, document_url(cik, f));
+            }
+            println!("Anmälningarna listas bara. Köp, sälj och belopp läses inte ut än.");
+        }
+
+        Command::World { action } => {
+            let store = open()?;
+            match action {
+                WorldAction::Build { limit } => {
+                    let http = Http::new()?;
+                    let mut countries = world::fetch_countries(&http).await?;
+                    countries.sort_by(|a, b| b.gdp_usd.unwrap_or(0.0).total_cmp(&a.gdp_usd.unwrap_or(0.0)));
+                    println!("{} länder och territorier från Världsbanken.", countries.len());
+                    let asked = limit.unwrap_or(countries.len());
+                    let (mut ok, mut failed) = (0, 0);
+                    for (i, country) in countries.iter_mut().enumerate() {
+                        if i < asked {
+                            // GLEIF allows about one request a second.
+                            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                            match world::lei_count(&http, &country.iso2).await {
+                                Ok(n) => {
+                                    country.lei_count = Some(n);
+                                    ok += 1;
+                                }
+                                Err(_) => failed += 1,
+                            }
+                            country.esef_count = world::esef_count(&http, &country.iso2).await.ok();
+                        }
+                        store.upsert_country(country)?;
+                    }
+                    println!("{ok} länder besvarade av GLEIF, {failed} misslyckades. Kör igen för att fylla luckor.");
+                }
+                WorldAction::List { limit } => {
+                    println!("{:<4} {:<30} {:>12} {:>10} {:>7}  nationellt system", "kod", "land", "BNP mdr USD", "LEI", "ESEF");
+                    for c in store.countries_of_world()?.into_iter().take(limit) {
+                        println!(
+                            "{:<4} {:<30} {:>12} {:>10} {:>7}  {}",
+                            c.iso2,
+                            c.name.chars().take(30).collect::<String>(),
+                            c.gdp_usd.map(|g| format!("{:.1}", g / 1e9)).unwrap_or_else(|| "saknas".into()),
+                            c.lei_count.map(|n| n.to_string()).unwrap_or_else(|| "ej frågat".into()),
+                            c.esef_count.map(|n| n.to_string()).unwrap_or_else(|| "ej frågat".into()),
+                            world::national_system(&c.iso2).map(|(n, _)| n).unwrap_or("")
+                        );
+                    }
+                }
+                WorldAction::Export { file } => {
+                    let countries = store.countries_of_world()?;
+                    let with_lei = countries.iter().filter(|c| c.lei_count.unwrap_or(0) > 0).count();
+                    let with_esef = countries.iter().filter(|c| c.esef_count.unwrap_or(0) > 0).count();
+                    let with_gdp = countries.iter().filter(|c| c.gdp_usd.is_some()).count();
+                    let mut md = String::new();
+                    md.push_str("# Världen: vad källorna har för varje land\n\n");
+                    md.push_str(&format!(
+                        "Skapad {} med `term world build`. Siffrorna är räknade av källorna själva, inte skrivna för hand.\n\n",
+                        &unix_to_iso_minutes(now_unix())[..10]
+                    ));
+                    md.push_str(&format!(
+                        "- **{}** länder och territorier i Världsbankens lista.\n- **{with_gdp}** har en BNP-siffra (Världsbanken).\n- **{with_lei}** har minst ett bolag med LEI (GLEIF).\n- **{with_esef}** har årsredovisningar i det europeiska formatet (filings.xbrl.org).\n\n",
+                        countries.len()
+                    ));
+                    md.push_str("Gäller alla länder: jordbävningar och larm (USGS, GDACS) täcker hela världen, och OFAC:s sanktionslista gäller parter i alla länder.\n\n");
+                    md.push_str("Kolumnen Nationellt system är bara ifylld där projektet har undersökt systemet. Tom ruta betyder inte att landet saknar ett, bara att ingen har kartlagt det.\n\n");
+                    md.push_str("| # | Land | Kod | Region | BNP mdr USD | År | Bolag med LEI | ESEF | Nationellt system |\n|---|---|---|---|---|---|---|---|---|\n");
+                    for (i, c) in countries.iter().enumerate() {
+                        let national = match world::national_system(&c.iso2) {
+                            Some((name, status)) => format!("{name} ({status})"),
+                            None if c.esef_count.unwrap_or(0) > 0 => "filings.xbrl.org (inlagd och körd)".to_string(),
+                            None => String::new(),
+                        };
+                        md.push_str(&format!(
+                            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+                            i + 1,
+                            c.name,
+                            c.iso2,
+                            c.region,
+                            c.gdp_usd.map(|g| format!("{:.1}", g / 1e9)).unwrap_or_default(),
+                            c.gdp_year.map(|y| y.to_string()).unwrap_or_default(),
+                            c.lei_count.map(|n| n.to_string()).unwrap_or_else(|| "ej frågat".into()),
+                            c.esef_count.map(|n| n.to_string()).unwrap_or_else(|| "ej frågat".into()),
+                            national
+                        ));
+                    }
+                    std::fs::write(&file, md).with_context(|| format!("kunde inte skriva {}", file.display()))?;
+                    println!("{} länder skrivna till {}", countries.len(), file.display());
                 }
             }
         }

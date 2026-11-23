@@ -1,8 +1,8 @@
 //! The terminal window.
 //!
-//! Three dockable views so far: KEDJA (the chain as a graph), BEVIS (the
-//! evidence behind the selected relation, with approve and reject) and
-//! GRANSKA (the review queue). It reads and writes the same database file
+//! Four dockable views so far: KEDJA (the chain as a graph), BEVIS (the
+//! evidence behind the selected relation, with approve and reject),
+//! GRANSKA (the review queue) and HÄNDELSER (stored events, newest first). It reads and writes the same database file
 //! as the command line.
 //!
 //! STATUS: the logic and several frames of layout are tested without a
@@ -14,7 +14,8 @@ use command::{Command, View};
 use eframe::egui;
 use egui_dock::{DockArea, DockState, NodeIndex as DockNode, TabViewer};
 use egui_graphs::{DefaultGraphView, Graph, SettingsInteraction, SettingsNavigation, SettingsStyle};
-use term_core::{Cik, Company, Direction, ReviewStatus, StoredRelation, Unit};
+use term_core::time::unix_to_iso_minutes;
+use term_core::{Cik, Company, Direction, Event, ReviewStatus, StoredRelation, Unit};
 use term_store::{ChainView, Store};
 
 /// Node payload: the relation the node stands for. The company in the
@@ -40,6 +41,7 @@ struct State {
     selected: Option<i64>,
     note: String,
     pending: Vec<StoredRelation>,
+    events: Vec<Event>,
     focus: Option<View>,
 }
 
@@ -98,9 +100,11 @@ impl State {
             selected: None,
             note: String::new(),
             pending: Vec::new(),
+            events: Vec::new(),
             focus: None,
         };
         state.reload_pending();
+        state.reload_events();
         state
     }
 
@@ -111,10 +115,22 @@ impl State {
         }
     }
 
+    fn reload_events(&mut self) {
+        match self.store.events(500) {
+            Ok(list) => self.events = list,
+            Err(e) => self.message = format!("Kunde inte läsa händelser: {e}"),
+        }
+    }
+
     fn run_command(&mut self) {
         let input = std::mem::take(&mut self.command);
         match command::parse(&input) {
-            Ok(Command::Focus(view)) => self.focus = Some(view),
+            Ok(Command::Focus(view)) => {
+                if view == View::Handelser {
+                    self.reload_events();
+                }
+                self.focus = Some(view);
+            }
             Ok(Command::Open { target, view }) => {
                 self.open(&target);
                 self.focus = Some(view);
@@ -355,6 +371,34 @@ impl State {
     }
 }
 
+impl State {
+    fn events_pane(&mut self, ui: &mut egui::Ui) {
+        if self.events.is_empty() {
+            ui.label("Inga händelser sparade. Hämta med kommandot: term events fetch");
+            return;
+        }
+        ui.label(format!(
+            "{} händelser, nyast först. De är ännu inte kopplade till anläggningar i kedjorna.",
+            self.events.len()
+        ));
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("handelser").num_columns(5).striped(true).show(ui, |ui| {
+                for e in &self.events {
+                    ui.label(unix_to_iso_minutes(e.time));
+                    ui.label(&e.kind);
+                    ui.label(e.alert.as_deref().unwrap_or(""));
+                    ui.label(e.country.as_deref().unwrap_or(""));
+                    match &e.url {
+                        Some(url) => ui.hyperlink_to(&e.title, url),
+                        None => ui.label(&e.title),
+                    };
+                    ui.end_row();
+                }
+            });
+        });
+    }
+}
+
 struct Viewer<'a> {
     state: &'a mut State,
 }
@@ -375,6 +419,7 @@ impl TabViewer for Viewer<'_> {
             View::Kedja => self.state.chain_pane(ui),
             View::Bevis => self.state.evidence_pane(ui),
             View::Granska => self.state.review_pane(ui),
+            View::Handelser => self.state.events_pane(ui),
         }
     }
 
@@ -391,7 +436,7 @@ struct Terminal {
 impl Terminal {
     fn new(store: Store) -> Self {
         let mut dock = DockState::new(vec![View::Kedja]);
-        dock.main_surface_mut().split_right(DockNode::root(), 0.68, vec![View::Bevis, View::Granska]);
+        dock.main_surface_mut().split_right(DockNode::root(), 0.68, vec![View::Bevis, View::Granska, View::Handelser]);
         Self { dock, state: State::new(store) }
     }
 
@@ -573,6 +618,33 @@ mod tests {
         terminal.state.reload_chain();
         assert_eq!(terminal.state.graph.node_count(), 2, "only the company and the approved relation");
         frames(&mut terminal, 2);
+    }
+
+    #[test]
+    fn events_view_lists_stored_events() {
+        let store = seeded();
+        store
+            .upsert_events(&[Event {
+                source: "usgs".into(),
+                external_id: "x1".into(),
+                kind: "earthquake".into(),
+                title: "M 6.1 made up place".into(),
+                time: 1_795_446_657,
+                lat: Some(1.0),
+                lon: Some(2.0),
+                severity: Some(6.1),
+                severity_unit: Some("magnitude".into()),
+                alert: None,
+                country: None,
+                url: Some("https://example.org/x1".into()),
+            }])
+            .unwrap();
+        let mut terminal = Terminal::new(store);
+        assert_eq!(terminal.state.events.len(), 1);
+        terminal.state.command = "händelser".into();
+        terminal.state.run_command();
+        assert_eq!(terminal.state.focus, Some(View::Handelser));
+        frames(&mut terminal, 3);
     }
 
     #[test]

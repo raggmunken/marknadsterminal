@@ -1,0 +1,21 @@
+[
+ {
+  "data": [
+   {
+    "figi": "BBG000NDYB67",
+    "name": "GENERAL MOTORS CO",
+    "ticker": "GM",
+    "exchCode": "US",
+    "compositeFIGI": "BBG000NDYB67",
+    "securityType": "Common Stock",
+    "marketSector": "Equity",
+    "shareClassFIGI": "BBG001SM1DK6",
+    "securityType2": "Common Stock",
+    "securityDescription": "GM"
+   }
+  ]
+ },
+ {
+  "warning": "No identifier found."
+ }
+]

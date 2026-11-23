@@ -1,6 +1,7 @@
 //! Shared types for the terminal. This crate does no I/O.
 
 pub mod names;
+pub mod time;
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -195,6 +196,47 @@ pub struct LogRecord {
     pub payload: String,
     pub prev_hash: String,
     pub hash: String,
+}
+
+/// Something that happened in the world and may disturb a supply chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Event {
+    /// Where it was fetched from, for example `usgs`.
+    pub source: String,
+    /// The source's own identifier. Unique together with `source`.
+    pub external_id: String,
+    /// `earthquake`, `cyclone`, `flood`, `volcano`, `drought`, `wildfire` or the source's own code.
+    pub kind: String,
+    pub title: String,
+    /// Unix seconds, UTC.
+    pub time: i64,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub severity: Option<f64>,
+    pub severity_unit: Option<String>,
+    /// The source's alert level, for example `Red`.
+    pub alert: Option<String>,
+    pub country: Option<String>,
+    pub url: Option<String>,
+}
+
+/// One observation in a time series. `date` is as the source gives it:
+/// a day, or a year for annual series.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SeriesPoint {
+    pub date: String,
+    pub value: f64,
+}
+
+/// One name on a sanctions list. Free text remarks are deliberately not
+/// kept, because they hold personal details of private individuals.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SanctionEntry {
+    pub list_id: u64,
+    pub name: String,
+    /// `individual`, `vessel`, `aircraft`, or `None` for organisations.
+    pub kind: Option<String>,
+    pub program: Option<String>,
 }
 
 #[cfg(test)]

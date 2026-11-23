@@ -1,10 +1,11 @@
 # Marknadsterminalen
 
 Kod till projektplanen "Egen marknadsterminal i Rust". Det här är kedjemotorn
-från dokument till granskad relation, med lagring, API, gränssnitt och
-grunden för signalmotorn. Allt nedan är kört på ett påhittat testdokument.
-Ingenting är kört mot riktiga källor än, eftersom det kräver uppgifterna i
-`.env.example`.
+från dokument till granskad relation, med lagring, API, gränssnitt, gratis
+datakällor och grunden för signalmotorn.
+
+Kedjemotorn är körd på ett påhittat testdokument, inte på riktiga
+årsredovisningar. De gratis källorna i `term-sources` är körda skarpt.
 
 ## Flödet
 
@@ -27,8 +28,9 @@ dokument -> text -> stycken -> extraktion -> citatkontroll -> bolagsmatchning
 | `term-resolve` | Bolagsmatchning, spegling, sammanslagning | Testat på påhittade bolag |
 | `term-store` | Lagring i en SQLite-fil | Testat, även mot fil på disk |
 | `term-api` | HTTP-gränssnitt | Testat, och kört som server på localhost |
+| `term-sources` | Tio gratis källor utöver EDGAR | Nio körda skarpt 2026-11-23. FRED väntar på nyckel |
 | `term-signal` | Signalkort, låst logg, fyra grindar, statistik | Testat. Innehåller ingen regel som ger signaler |
-| `term-ui` | Fönstret: KEDJA, BEVIS, GRANSKA | Testat utan fönster. Ingen har sett det |
+| `term-ui` | Fönstret: KEDJA, BEVIS, GRANSKA, HÄNDELSER | Testat utan fönster. Ingen har sett det |
 | `term-cli` | Kommandot `term` | Kört från början till slut |
 
 ## Kom igång
@@ -69,6 +71,42 @@ cargo run -p term-cli -- reverse 1467858
 
 Inget i det här blocket har körts.
 
+## Gratis källor
+
+Nio källor kräver ingen nyckel och är körda skarpt. Tolkarna testas mot
+inspelade riktiga svar i `fixtures/kallor/`.
+
+| Källa | Ger | Kommando | Läge |
+|---|---|---|---|
+| USGS | Jordbävningar | `term events fetch usgs` | Körd skarpt |
+| GDACS | Cykloner, översvämningar, vulkaner, bränder med larmnivå | `term events fetch gdacs` | Körd skarpt |
+| GLEIF | LEI för ett bolagsnamn | `term lookup lei "Volvo"` | Körd skarpt |
+| OpenFIGI | FIGI för en ticker | `term lookup figi GM` | Körd skarpt utan nyckel |
+| ECB | Valutakurser mot euro | `term series fetch ecb SEK` | Körd skarpt |
+| Riksbanken | Kronkurser och räntor | `term series fetch riksbank SEKUSDPMI` | Körd skarpt |
+| Världsbanken | Årliga makroserier per land | `term series fetch worldbank NY.GDP.MKTP.CD --country SE` | Körd skarpt |
+| filings.xbrl.org | Europeiska årsredovisningar (ESEF) | `term esef SE` | Körd skarpt |
+| OFAC | Sanktionslistan SDN | `term sanctions fetch`, `check`, `screen` | Körd skarpt |
+| FRED | Amerikanska räntor och makro | `term series fetch fred DGS10` | Inte körd. Kräver gratis nyckel |
+
+```sh
+term events fetch && term events list
+term series list
+term sanctions fetch && term sanctions screen
+```
+
+Två varningar:
+
+- **Sanktionskollen är ingen regelefterlevnadskontroll.** Bara huvudnamn jämförs,
+  inte alias. Ingen träff bevisar ingenting.
+- **Händelserna är inte kopplade till kedjorna.** Det kräver var bolagens
+  anläggningar ligger, och den datan finns inte i projektet än.
+
+Gratis källor i planen som INTE är inlagda: GDELT (svarade inte härifrån),
+USAspending, EPA FRS, Census, UN Comtrade, NASA FIRMS, aisstream.io, EIA,
+EDINET, Open DART och SEC:s dataset för ägare, insiders och räkenskaper.
+Open Supply Hub och OpenSky väntar på licensfrågorna i planens juristlista.
+
 ## Regler i koden
 
 - **Citatet avgör.** En relation släpps bara igenom om citatet finns i stycket
@@ -90,10 +128,10 @@ Inget i det här blocket har körts.
 
 - Ingen regel som ger signaler. De tre signaltyperna kräver kurshistorik,
   estimat och händelsedata som projektet inte har.
-- Ingen kursdata, inga flöden, inga händelser, ingen prognosmodell. Det är
-  planens del 2 och större delen av del 3.
+- Ingen kursdata, inga flöden och ingen prognosmodell. Händelser hämtas men
+  är inte kopplade till anläggningar. Det är planens del 2 och större delen av del 3.
 - Ingen inloggning i API:et. Det lyssnar på localhost.
-- Vyerna FILINGS, PEERS, FIN, AGARE, INSIDER, LEDNING, KARTA och KURS.
+- Vyerna FILINGS, PEERS, FIN, AGARE, INSIDER, LEDNING, KARTA och KURS, och alla vyer i del 2 utom HÄNDELSER.
 
 ## Avvikelser från planen
 

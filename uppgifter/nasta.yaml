@@ -76,3 +76,24 @@
     - testet läser bara rader med known_at före testdatum
     - resultatet går genom Rule::record_backtest, oavsett utfall
   berör: crates/term-signal, nytt paket term-backtest
+
+- uppgift: kallor/fred-skarpt
+  vem: agent
+  mål: FRED körs skarpt och får en inspelad testfil
+  kräver: FRED_API_KEY i .env
+  klart_när:
+    - term series fetch fred DGS10 sparar en serie
+    - ett riktigt svar ligger i fixtures/kallor/ och tolken testas mot det
+
+- uppgift: kallor/resten-av-de-fria
+  vem: agent
+  mål: De gratis källor som inte är inlagda
+  klart_när:
+    - USAspending, EPA FRS, Census, UN Comtrade, NASA FIRMS, EIA och aisstream.io har var sin modul
+    - varje modul har en inspelad riktig testfil och är körd skarpt
+  berör: crates/term-sources
+
+- uppgift: kallor/anlaggningar
+  vem: agent
+  mål: Händelser kopplas till bolag
+  not: Kräver var anläggningar ligger. Kandidater i planen är EPA FRS och Open Supply Hub. Open Supply Hub väntar på juristens svar om licensen.

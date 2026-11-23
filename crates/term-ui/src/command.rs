@@ -8,22 +8,26 @@ pub enum View {
     Bevis,
     /// The review queue.
     Granska,
+    /// Events that may disturb a chain: earthquakes, cyclones, floods.
+    Handelser,
 }
 
 impl View {
-    pub const ALL: [View; 3] = [View::Kedja, View::Bevis, View::Granska];
+    pub const ALL: [View; 4] = [View::Kedja, View::Bevis, View::Granska, View::Handelser];
 
     pub fn title(self) -> &'static str {
         match self {
             View::Kedja => "KEDJA",
             View::Bevis => "BEVIS",
             View::Granska => "GRANSKA",
+            View::Handelser => "HÄNDELSER",
         }
     }
 
     fn parse(word: &str) -> Option<View> {
-        let upper = word.to_uppercase();
-        View::ALL.into_iter().find(|v| v.title() == upper)
+        // The view can be typed with or without the Swedish letter.
+        let upper = word.to_uppercase().replace('Ä', "A");
+        View::ALL.into_iter().find(|v| v.title().replace('Ä', "A") == upper)
     }
 }
 
@@ -78,9 +82,16 @@ mod tests {
     }
 
     #[test]
+    fn swedish_letter_is_optional() {
+        assert_eq!(parse("handelser"), Ok(Command::Focus(View::Handelser)));
+        assert_eq!(parse("händelser"), Ok(Command::Focus(View::Handelser)));
+        assert_eq!(parse("HÄNDELSER"), Ok(Command::Focus(View::Handelser)));
+    }
+
+    #[test]
     fn errors_say_what_to_type() {
         assert!(parse("").unwrap_err().contains("GM KEDJA"));
-        assert!(parse("GM KURS").unwrap_err().contains("KEDJA, BEVIS, GRANSKA"));
+        assert!(parse("GM KURS").unwrap_err().contains("KEDJA, BEVIS, GRANSKA, HÄNDELSER"));
         assert!(parse("a b c").is_err());
     }
 }

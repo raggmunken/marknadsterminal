@@ -1,0 +1,132 @@
+{
+ "data": [
+  {
+   "type": "filing",
+   "id": "27992",
+   "attributes": {
+    "period_end": "2026-08-31",
+    "country": "SE",
+    "fxo_id": "549300C3IRYAOWOT0783-2026-08-31-ESEF-SE-0",
+    "date_added": "2026-11-18 16:32:57.607850",
+    "processed": "2026-11-19 18:35:23.354289",
+    "published": "2026-11-18 10:00:00",
+    "sha256": "311108dd196c872c6c08157c3c935b334589f309f634647cd99f4b4f8dc10990",
+    "viewer_url": "/549300C3IRYAOWOT0783/2026-08-31/ESEF/SE/0/549300C3IRYAOWOT0783-2026-08-31-1-sv/reports/ixbrlviewer.html",
+    "package_url": "/549300C3IRYAOWOT0783/2026-08-31/ESEF/SE/0/549300C3IRYAOWOT0783-2026-08-31.zip",
+    "report_url": "/549300C3IRYAOWOT0783/2026-08-31/ESEF/SE/0/549300C3IRYAOWOT0783-2026-08-31-1-sv/reports/549300C3IRYAOWOT0783-2026-08-31-1-sv.xhtml",
+    "json_url": "/549300C3IRYAOWOT0783/2026-08-31/ESEF/SE/0/549300C3IRYAOWOT0783-2026-08-31-1-sv.json",
+    "error_count": 0,
+    "warning_count": 1,
+    "inconsistency_count": 0
+   },
+   "relationships": {
+    "entity": {
+     "links": {
+      "related": "/api/entities/549300C3IRYAOWOT0783"
+     },
+     "data": {
+      "type": "entity",
+      "id": "3044"
+     }
+    },
+    "validation_messages": {
+     "links": {
+      "related": "/api/filings/27992/validation_messages"
+     }
+    }
+   },
+   "links": {
+    "self": "/api/filings/27992"
+   }
+  },
+  {
+   "type": "filing",
+   "id": "27991",
+   "attributes": {
+    "period_end": "2026-08-31",
+    "country": "SE",
+    "fxo_id": "529900CD7HSJ1CZS7089-2026-08-31-ESEF-SE-0",
+    "date_added": "2026-11-18 16:31:27.175338",
+    "processed": "2026-11-19 18:32:34.352022",
+    "published": "2026-11-18 06:00:00",
+    "sha256": "5ac2a91633bff054b63ce680e94578650e07ab016d5a9b3f972bc83c6ba002e5",
+    "viewer_url": "/529900CD7HSJ1CZS7089/2026-08-31/ESEF/SE/0/529900CD7HSJ1CZS7089-2026-08-31-1-sv/reports/ixbrlviewer.html",
+    "package_url": "/529900CD7HSJ1CZS7089/2026-08-31/ESEF/SE/0/529900CD7HSJ1CZS7089-2026-08-31.zip",
+    "report_url": "/529900CD7HSJ1CZS7089/2026-08-31/ESEF/SE/0/529900CD7HSJ1CZS7089-2026-08-31-1-sv/reports/529900CD7HSJ1CZS7089-2026-08-31-1-sv.xhtml",
+    "json_url": "/529900CD7HSJ1CZS7089/2026-08-31/ESEF/SE/0/529900CD7HSJ1CZS7089-2026-08-31-1-sv.json",
+    "error_count": 0,
+    "warning_count": 2,
+    "inconsistency_count": 0
+   },
+   "relationships": {
+    "entity": {
+     "links": {
+      "related": "/api/entities/529900CD7HSJ1CZS7089"
+     },
+     "data": {
+      "type": "entity",
+      "id": "3038"
+     }
+    },
+    "validation_messages": {
+     "links": {
+      "related": "/api/filings/27991/validation_messages"
+     }
+    }
+   },
+   "links": {
+    "self": "/api/filings/27991"
+   }
+  }
+ ],
+ "links": {
+  "self": "https://filings.xbrl.org/api/filings?filter%5Bcountry%5D=SE&page%5Bsize%5D=2&include=entity&sort=-date_added",
+  "first": "https://filings.xbrl.org/api/filings?filter%5Bcountry%5D=SE&page%5Bsize%5D=2&include=entity&sort=-date_added",
+  "last": "https://filings.xbrl.org/api/filings?filter%5Bcountry%5D=SE&page%5Bsize%5D=2&include=entity&sort=-date_added&page%5Bnumber%5D=921",
+  "next": "https://filings.xbrl.org/api/filings?filter%5Bcountry%5D=SE&page%5Bsize%5D=2&include=entity&sort=-date_added&page%5Bnumber%5D=2"
+ },
+ "meta": {
+  "count": 1841
+ },
+ "included": [
+  {
+   "type": "entity",
+   "id": "3044",
+   "attributes": {
+    "identifier": "549300C3IRYAOWOT0783",
+    "name": "Dustin Group AB"
+   },
+   "relationships": {
+    "filings": {
+     "links": {
+      "related": "/api/entities/549300C3IRYAOWOT0783/filings"
+     }
+    }
+   },
+   "links": {
+    "self": "/api/entities/549300C3IRYAOWOT0783"
+   }
+  },
+  {
+   "type": "entity",
+   "id": "3038",
+   "attributes": {
+    "identifier": "529900CD7HSJ1CZS7089",
+    "name": "SkiStar Aktiebolag"
+   },
+   "relationships": {
+    "filings": {
+     "links": {
+      "related": "/api/entities/529900CD7HSJ1CZS7089/filings"
+     }
+    }
+   },
+   "links": {
+    "self": "/api/entities/529900CD7HSJ1CZS7089"
+   }
+  }
+ ],
+ "jsonapi": {
+  "version": "1.0"
+ }
+}

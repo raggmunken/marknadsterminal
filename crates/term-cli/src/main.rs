@@ -13,8 +13,10 @@ use term_extract::eval::{evaluate, FacitRow};
 use term_ingest::search::mentioning_companies;
 use term_ingest::{document_url, latest_of_form, EdgarClient};
 use term_parse::{html_to_text, select_passages, DEFAULT_MIN_SCORE};
+use term_core::time::unix_to_iso_minutes;
 use term_resolve::{merge, Directory, Resolution};
-use term_store::{Store, Upsert};
+use term_sources::{ecb, esef, fred, gdacs, gleif, ofac, openfigi, riksbank, usgs, worldbank, Http};
+use term_store::{now_unix, Store, Upsert};
 
 #[derive(Parser)]
 #[command(name = "term", about = "Marknadsterminalen")]
@@ -103,6 +105,120 @@ enum Command {
         #[command(subcommand)]
         action: SignalAction,
     },
+    /// Händelser som kan störa en kedja: jordbävningar, cykloner, översvämningar
+    Events {
+        #[command(subcommand)]
+        action: EventsAction,
+    },
+    /// Tidsserier: valuta, räntor och makro
+    Series {
+        #[command(subcommand)]
+        action: SeriesAction,
+    },
+    /// Slå upp identiteter hos GLEIF (LEI) och OpenFIGI (FIGI)
+    Lookup {
+        #[command(subcommand)]
+        action: LookupAction,
+    },
+    /// OFAC:s sanktionslista. Ett hjälpmedel, ingen regelefterlevnadskontroll
+    Sanctions {
+        #[command(subcommand)]
+        action: SanctionsAction,
+    },
+    /// Senaste europeiska årsredovisningar (ESEF) för ett land, till exempel SE
+    Esef {
+        country: String,
+        #[arg(long, default_value_t = 10)]
+        limit: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum EventsAction {
+    /// Hämta nya händelser och spara dem
+    Fetch {
+        #[arg(value_enum, default_value_t = EventSource::All)]
+        source: EventSource,
+        /// USGS-flöde: 4.5_day, 4.5_week, 4.5_month, significant_day, significant_week, significant_month
+        #[arg(long, default_value = "4.5_day")]
+        feed: String,
+    },
+    /// Visa sparade händelser, nyast först
+    List {
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum, PartialEq, Eq)]
+enum EventSource {
+    Usgs,
+    Gdacs,
+    All,
+}
+
+#[derive(Subcommand)]
+enum SeriesAction {
+    /// Hämta en serie och spara den
+    Fetch {
+        #[arg(value_enum)]
+        source: SeriesSource,
+        /// ecb: valutakod (SEK). riksbank: serienamn (SEKUSDPMI). worldbank: indikator (NY.GDP.MKTP.CD). fred: serienamn (DGS10)
+        id: String,
+        /// ecb: antal senaste observationer
+        #[arg(long, default_value_t = 30)]
+        last: u32,
+        /// riksbank: första dag, ÅÅÅÅ-MM-DD. Standard är 30 dagar bakåt
+        #[arg(long)]
+        from: Option<String>,
+        /// riksbank: sista dag. Standard är i dag
+        #[arg(long)]
+        to: Option<String>,
+        /// worldbank: landskod
+        #[arg(long, default_value = "SE")]
+        country: String,
+    },
+    /// Visa de senaste värdena i en sparad serie
+    Show {
+        source: String,
+        series: String,
+        #[arg(long, default_value_t = 10)]
+        last: usize,
+    },
+    /// Vilka serier finns sparade?
+    List,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum SeriesSource {
+    Ecb,
+    Riksbank,
+    Worldbank,
+    /// Kräver FRED_API_KEY
+    Fred,
+}
+
+#[derive(Subcommand)]
+enum LookupAction {
+    /// Sök LEI på bolagsnamn
+    Lei { name: String },
+    /// Sök FIGI på ticker
+    Figi {
+        ticker: String,
+        /// OpenFIGI:s börskod, till exempel US eller SS (Stockholm)
+        #[arg(long, default_value = "US")]
+        exch: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SanctionsAction {
+    /// Hämta listan och ersätt den sparade kopian
+    Fetch,
+    /// Finns namnet som huvudnamn på listan?
+    Check { name: String },
+    /// Jämför alla motparter i kedjorna mot listan
+    Screen,
 }
 
 #[derive(Subcommand)]
@@ -441,6 +557,185 @@ async fn main() -> Result<()> {
             }
             println!("lyssnar på http://{addr}  (prova /health)");
             term_api::serve(addr, store).await?;
+        }
+
+        Command::Events { action } => {
+            let store = open()?;
+            match action {
+                EventsAction::Fetch { source, feed } => {
+                    let http = Http::new()?;
+                    if source != EventSource::Gdacs {
+                        let events = usgs::fetch(&http, &feed).await?;
+                        let new = store.upsert_events(&events)?;
+                        println!("usgs ({feed}): {} händelser hämtade, {new} nya", events.len());
+                    }
+                    if source != EventSource::Usgs {
+                        let events = gdacs::fetch(&http).await?;
+                        let new = store.upsert_events(&events)?;
+                        println!("gdacs (orange och röd): {} händelser hämtade, {new} nya", events.len());
+                    }
+                }
+                EventsAction::List { limit } => {
+                    let events = store.events(limit)?;
+                    if events.is_empty() {
+                        println!("Inga händelser sparade. Hämta med: term events fetch");
+                    }
+                    for e in events {
+                        let position = match (e.lat, e.lon) {
+                            (Some(lat), Some(lon)) => format!("{lat:.1}, {lon:.1}"),
+                            _ => "okänd plats".to_string(),
+                        };
+                        println!(
+                            "{}  {:<6} {:<10} {:<7} {}  ({position})",
+                            unix_to_iso_minutes(e.time),
+                            e.source,
+                            e.kind,
+                            e.alert.unwrap_or_default(),
+                            e.title
+                        );
+                    }
+                }
+            }
+        }
+
+        Command::Series { action } => {
+            let store = open()?;
+            match action {
+                SeriesAction::Fetch { source, id, last, from, to, country } => {
+                    let http = Http::new()?;
+                    let today = unix_to_iso_minutes(now_unix())[..10].to_string();
+                    let month_ago = unix_to_iso_minutes(now_unix() - 30 * 86_400)[..10].to_string();
+                    let (name, series, points) = match source {
+                        SeriesSource::Ecb => ("ecb", ecb::series_id(&id), ecb::fetch(&http, &id, last).await?),
+                        SeriesSource::Riksbank => {
+                            let from = from.unwrap_or(month_ago);
+                            let to = to.unwrap_or(today);
+                            ("riksbank", id.trim().to_string(), riksbank::fetch(&http, &id, &from, &to).await?)
+                        }
+                        SeriesSource::Worldbank => (
+                            "worldbank",
+                            worldbank::series_id(&country, &id),
+                            worldbank::fetch(&http, &country, &id, 100).await?,
+                        ),
+                        SeriesSource::Fred => ("fred", id.trim().to_string(), fred::fetch(&http, &id).await?),
+                    };
+                    let changed = store.upsert_series(name, &series, &points)?;
+                    println!("{name} {series}: {} observationer hämtade, {changed} nya eller ändrade", points.len());
+                    if let Some(p) = points.last() {
+                        println!("senaste: {} = {}", p.date, p.value);
+                    }
+                }
+                SeriesAction::Show { source, series, last } => {
+                    let points = store.series(&source, &series)?;
+                    if points.is_empty() {
+                        println!("Serien finns inte sparad. Se: term series list");
+                    }
+                    for p in points.iter().skip(points.len().saturating_sub(last)) {
+                        println!("{}  {}", p.date, p.value);
+                    }
+                }
+                SeriesAction::List => {
+                    for (source, series, n, last) in store.series_list()? {
+                        println!("{source:<10} {series:<28} {n:>6} punkter, senaste {last}");
+                    }
+                }
+            }
+        }
+
+        Command::Lookup { action } => {
+            let http = Http::new()?;
+            match action {
+                LookupAction::Lei { name } => {
+                    let records = gleif::search(&http, &name, 10).await?;
+                    if records.is_empty() {
+                        println!("Ingen träff hos GLEIF.");
+                    }
+                    for r in records {
+                        println!(
+                            "{}  {}  ({}, {})",
+                            r.lei,
+                            r.legal_name,
+                            r.jurisdiction.unwrap_or_else(|| "okänd jurisdiktion".into()),
+                            r.entity_status.unwrap_or_else(|| "okänd status".into())
+                        );
+                    }
+                }
+                LookupAction::Figi { ticker, exch } => {
+                    let results = openfigi::map_tickers(&http, &[(ticker.as_str(), exch.as_str())]).await?;
+                    let records = results.into_iter().next().unwrap_or_default();
+                    if records.is_empty() {
+                        println!("Ingen träff hos OpenFIGI för {ticker} på {exch}.");
+                    }
+                    for r in records {
+                        println!(
+                            "{}  {}  {}  ({})",
+                            r.figi,
+                            r.ticker.unwrap_or_default(),
+                            r.name.unwrap_or_default(),
+                            r.security_type.unwrap_or_default()
+                        );
+                    }
+                }
+            }
+        }
+
+        Command::Sanctions { action } => {
+            let store = open()?;
+            let caveat = "Obs: bara huvudnamn jämförs, inte alias. Ingen träff betyder inte att parten är fri från sanktioner.";
+            match action {
+                SanctionsAction::Fetch => {
+                    let entries = ofac::fetch(&Http::new()?).await?;
+                    let n = store.replace_sanctions("ofac", &entries)?;
+                    println!("{n} namn sparade från OFAC:s SDN-lista.");
+                }
+                SanctionsAction::Check { name } => {
+                    if store.sanction_count()? == 0 {
+                        bail!("listan är inte hämtad. Kör först: term sanctions fetch");
+                    }
+                    let hits = store.sanction_matches(&name)?;
+                    if hits.is_empty() {
+                        println!("Ingen träff på huvudnamn för {name:?}.");
+                    }
+                    for h in hits {
+                        println!("TRÄFF  #{}  {}  program: {}", h.list_id, h.name, h.program.unwrap_or_else(|| "okänt".into()));
+                    }
+                    println!("{caveat}");
+                }
+                SanctionsAction::Screen => {
+                    if store.sanction_count()? == 0 {
+                        bail!("listan är inte hämtad. Kör först: term sanctions fetch");
+                    }
+                    let relations = store.all_relations()?;
+                    let mut hits = 0;
+                    for r in &relations {
+                        for h in store.sanction_matches(&r.relation.counterparty.name)? {
+                            hits += 1;
+                            println!(
+                                "TRÄFF  relation #{}  {}  motsvarar listans #{} {}",
+                                r.id, r.relation.counterparty.name, h.list_id, h.name
+                            );
+                        }
+                    }
+                    println!("{} motparter jämförda, {hits} träffar.", relations.len());
+                    println!("{caveat}");
+                }
+            }
+        }
+
+        Command::Esef { country, limit } => {
+            let filings = esef::latest(&Http::new()?, &country, limit).await?;
+            if filings.is_empty() {
+                println!("Inga årsredovisningar för {country}.");
+            }
+            for f in filings {
+                println!(
+                    "{}  {}  period till {}  {}",
+                    f.lei,
+                    f.entity_name.unwrap_or_else(|| "okänt namn".into()),
+                    f.period_end,
+                    f.report_url.unwrap_or_default()
+                );
+            }
         }
 
         Command::Signal { action } => {

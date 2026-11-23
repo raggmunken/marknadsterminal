@@ -1,0 +1,307 @@
+{
+ "meta": {
+  "goldenCopy": {
+   "publishDate": "2026-11-23T08:00:00Z"
+  },
+  "pagination": {
+   "currentPage": 1,
+   "perPage": 2,
+   "from": 1,
+   "to": 2,
+   "total": 6,
+   "lastPage": 3
+  }
+ },
+ "links": {
+  "first": "https://api.gleif.org/api/v1/lei-records?filter%5Bentity.legalName%5D=General+Motors+Company&page%5Bnumber%5D=1&page%5Bsize%5D=2",
+  "next": "https://api.gleif.org/api/v1/lei-records?filter%5Bentity.legalName%5D=General+Motors+Company&page%5Bnumber%5D=2&page%5Bsize%5D=2",
+  "last": "https://api.gleif.org/api/v1/lei-records?filter%5Bentity.legalName%5D=General+Motors+Company&page%5Bnumber%5D=3&page%5Bsize%5D=2"
+ },
+ "data": [
+  {
+   "type": "lei-records",
+   "id": "54930070NSV60J38I987",
+   "attributes": {
+    "lei": "54930070NSV60J38I987",
+    "entity": {
+     "legalName": {
+      "name": "GENERAL MOTORS COMPANY",
+      "language": "en"
+     },
+     "otherNames": [],
+     "transliteratedOtherNames": [],
+     "legalAddress": {
+      "language": "en",
+      "addressLines": [
+       "251 Little Falls Drive"
+      ],
+      "addressNumber": null,
+      "addressNumberWithinBuilding": null,
+      "mailRouting": "c/o Corporation Service Company",
+      "city": "Wilmington",
+      "region": "US-DE",
+      "country": "US",
+      "postalCode": "19808"
+     },
+     "headquartersAddress": {
+      "language": "en",
+      "addressLines": [
+       "300 Renaissance Center"
+      ],
+      "addressNumber": null,
+      "addressNumberWithinBuilding": null,
+      "mailRouting": null,
+      "city": "Detroit",
+      "region": "US-MI",
+      "country": "US",
+      "postalCode": "48265"
+     },
+     "registeredAt": {
+      "id": "RA000602",
+      "other": null
+     },
+     "registeredAs": "4718317",
+     "jurisdiction": "US-DE",
+     "category": "GENERAL",
+     "legalForm": {
+      "id": "XTIQ",
+      "other": null
+     },
+     "associatedEntity": {
+      "lei": null,
+      "name": null
+     },
+     "status": "ACTIVE",
+     "expiration": {
+      "date": null,
+      "reason": null
+     },
+     "successorEntity": {
+      "lei": null,
+      "name": null
+     },
+     "successorEntities": [],
+     "creationDate": "2009-08-11T00:00:00Z",
+     "subCategory": null,
+     "otherAddresses": [],
+     "eventGroups": []
+    },
+    "registration": {
+     "initialRegistrationDate": "2013-04-01T17:52:00Z",
+     "lastUpdateDate": "2025-11-23T19:53:13Z",
+     "status": "ISSUED",
+     "nextRenewalDate": "2027-01-22T19:53:16Z",
+     "managingLou": "529900T8BM49AURSDO55",
+     "corroborationLevel": "FULLY_CORROBORATED",
+     "validatedAt": {
+      "id": "RA000602",
+      "other": null
+     },
+     "validatedAs": "4718317",
+     "otherValidationAuthorities": []
+    },
+    "bic": null,
+    "mic": null,
+    "ocid": "us_de/4718317",
+    "qcc": null,
+    "gem": null,
+    "spglobal": [
+     "61206100"
+    ],
+    "conformityFlag": "CONFORMING"
+   },
+   "relationships": {
+    "managing-lou": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/managing-lou"
+     }
+    },
+    "lei-issuer": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/lei-issuer"
+     }
+    },
+    "field-modifications": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/field-modifications"
+     }
+    },
+    "direct-parent": {
+     "links": {
+      "reporting-exception": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/direct-parent-reporting-exception"
+     }
+    },
+    "ultimate-parent": {
+     "links": {
+      "reporting-exception": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/ultimate-parent-reporting-exception"
+     }
+    },
+    "direct-children": {
+     "links": {
+      "relationship-records": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/direct-child-relationships",
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/direct-children"
+     }
+    },
+    "ultimate-children": {
+     "links": {
+      "relationship-records": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/ultimate-child-relationships",
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/ultimate-children"
+     }
+    },
+    "isins": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987/isins"
+     }
+    }
+   },
+   "links": {
+    "self": "https://api.gleif.org/api/v1/lei-records/54930070NSV60J38I987"
+   }
+  },
+  {
+   "type": "lei-records",
+   "id": "5493008B6JBRUJ90QL97",
+   "attributes": {
+    "lei": "5493008B6JBRUJ90QL97",
+    "entity": {
+     "legalName": {
+      "name": "GENERAL MOTORS FINANCIAL COMPANY, INC.",
+      "language": "en"
+     },
+     "otherNames": [
+      {
+       "name": "AmeriCredit Corp.",
+       "language": "en",
+       "type": "PREVIOUS_LEGAL_NAME"
+      }
+     ],
+     "transliteratedOtherNames": [],
+     "legalAddress": {
+      "language": "en",
+      "addressLines": [
+       "C/O CORPORATION SERVICE COMPANY D/B/A CSC-LAWYERS INCO",
+       "211 E. 7TH STREET",
+       "SUITE 620"
+      ],
+      "addressNumber": null,
+      "addressNumberWithinBuilding": null,
+      "mailRouting": null,
+      "city": "AUSTIN",
+      "region": "US-TX",
+      "country": "US",
+      "postalCode": "78701"
+     },
+     "headquartersAddress": {
+      "language": "en",
+      "addressLines": [
+       "801 CHERRY ST",
+       "STE 3900"
+      ],
+      "addressNumber": null,
+      "addressNumberWithinBuilding": null,
+      "mailRouting": null,
+      "city": "FORT WORTH",
+      "region": "US-TX",
+      "country": "US",
+      "postalCode": "76102"
+     },
+     "registeredAt": {
+      "id": "RA000637",
+      "other": null
+     },
+     "registeredAs": "0107735100",
+     "jurisdiction": "US-TX",
+     "category": "GENERAL",
+     "legalForm": {
+      "id": "C5K7",
+      "other": null
+     },
+     "associatedEntity": {
+      "lei": null,
+      "name": null
+     },
+     "status": "ACTIVE",
+     "expiration": {
+      "date": null,
+      "reason": null
+     },
+     "successorEntity": {
+      "lei": null,
+      "name": null
+     },
+     "successorEntities": [],
+     "creationDate": "1988-05-18T00:00:00Z",
+     "subCategory": null,
+     "otherAddresses": [],
+     "eventGroups": []
+    },
+    "registration": {
+     "initialRegistrationDate": "2013-04-02T19:41:00Z",
+     "lastUpdateDate": "2026-06-15T06:38:44Z",
+     "status": "ISSUED",
+     "nextRenewalDate": "2027-06-18T14:30:00Z",
+     "managingLou": "5493001KJTIIGC8Y1R12",
+     "corroborationLevel": "FULLY_CORROBORATED",
+     "validatedAt": {
+      "id": "RA000637",
+      "other": null
+     },
+     "validatedAs": "0107735100",
+     "otherValidationAuthorities": []
+    },
+    "bic": null,
+    "mic": null,
+    "ocid": "us_tx/0107735100",
+    "qcc": null,
+    "gem": null,
+    "spglobal": [
+     "24796"
+    ],
+    "conformityFlag": "CONFORMING"
+   },
+   "relationships": {
+    "managing-lou": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/managing-lou"
+     }
+    },
+    "lei-issuer": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/lei-issuer"
+     }
+    },
+    "field-modifications": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/field-modifications"
+     }
+    },
+    "direct-parent": {
+     "links": {
+      "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/direct-parent-relationship",
+      "lei-record": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/direct-parent"
+     }
+    },
+    "ultimate-parent": {
+     "links": {
+      "relationship-record": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/ultimate-parent-relationship",
+      "lei-record": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/ultimate-parent"
+     }
+    },
+    "direct-children": {
+     "links": {
+      "relationship-records": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/direct-child-relationships",
+      "related": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/direct-children"
+     }
+    },
+    "isins": {
+     "links": {
+      "related": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97/isins"
+     }
+    }
+   },
+   "links": {
+    "self": "https://api.gleif.org/api/v1/lei-records/5493008B6JBRUJ90QL97"
+   }
+  }
+ ]
+}

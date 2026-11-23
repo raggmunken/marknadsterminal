@@ -11,8 +11,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use term_core::names::normalize_name;
 use term_core::{
-    Amount, Cik, Company, Confidence, Counterparty, Direction, Evidence, LogRecord, Period,
-    Relation, ReviewStatus, StoredRelation, Unit,
+    Amount, Cik, Company, Confidence, Counterparty, Direction, Event, Evidence, LogRecord, Period,
+    Relation, ReviewStatus, SanctionEntry, SeriesPoint, StoredRelation, Unit,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -60,6 +60,44 @@ CREATE TABLE IF NOT EXISTS relation (
     UNIQUE (subject_cik, counterparty_key, direction)
 );
 CREATE INDEX IF NOT EXISTS relation_counterparty ON relation(counterparty_cik);
+
+CREATE TABLE IF NOT EXISTS event (
+    source        TEXT NOT NULL,
+    external_id   TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    time          INTEGER NOT NULL,
+    lat           REAL,
+    lon           REAL,
+    severity      REAL,
+    severity_unit TEXT,
+    alert         TEXT,
+    country       TEXT,
+    url           TEXT,
+    known_at      INTEGER NOT NULL,
+    PRIMARY KEY (source, external_id)
+);
+CREATE INDEX IF NOT EXISTS event_time ON event(time);
+
+CREATE TABLE IF NOT EXISTS series_point (
+    source   TEXT NOT NULL,
+    series   TEXT NOT NULL,
+    date     TEXT NOT NULL,
+    value    REAL NOT NULL,
+    known_at INTEGER NOT NULL,
+    PRIMARY KEY (source, series, date)
+);
+
+CREATE TABLE IF NOT EXISTS sanction (
+    source   TEXT NOT NULL,
+    list_id  INTEGER NOT NULL,
+    name     TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    kind     TEXT,
+    program  TEXT,
+    PRIMARY KEY (source, list_id)
+);
+CREATE INDEX IF NOT EXISTS sanction_name ON sanction(name_key);
 
 CREATE TABLE IF NOT EXISTS signal_log (
     seq        INTEGER PRIMARY KEY,
@@ -344,6 +382,183 @@ impl Store {
             return Err(StoreError::NoSuchRelation(id));
         }
         self.relation(id)?.ok_or(StoreError::NoSuchRelation(id))
+    }
+
+    // ----- events -----
+
+    /// Store events. An event that is already known keeps its first
+    /// `known_at`, so that a historical test never sees it earlier than
+    /// the store did. Returns how many were new.
+    pub fn upsert_events(&self, events: &[Event]) -> Result<usize> {
+        self.upsert_events_at(events, now_unix())
+    }
+
+    pub fn upsert_events_at(&self, events: &[Event], now: i64) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut new = 0;
+        {
+            let mut insert = tx.prepare(
+                "INSERT INTO event (source, external_id, kind, title, time, lat, lon, severity,
+                    severity_unit, alert, country, url, known_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                 ON CONFLICT(source, external_id) DO NOTHING",
+            )?;
+            let mut update = tx.prepare(
+                "UPDATE event SET kind = ?3, title = ?4, time = ?5, lat = ?6, lon = ?7, severity = ?8,
+                    severity_unit = ?9, alert = ?10, country = ?11, url = ?12
+                 WHERE source = ?1 AND external_id = ?2",
+            )?;
+            for e in events {
+                let inserted = insert.execute(params![
+                    e.source, e.external_id, e.kind, e.title, e.time, e.lat, e.lon, e.severity,
+                    e.severity_unit, e.alert, e.country, e.url, now
+                ])?;
+                if inserted == 1 {
+                    new += 1;
+                } else {
+                    // Sources revise magnitude and alert level after the fact.
+                    update.execute(params![
+                        e.source, e.external_id, e.kind, e.title, e.time, e.lat, e.lon, e.severity,
+                        e.severity_unit, e.alert, e.country, e.url
+                    ])?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(new)
+    }
+
+    /// Newest first.
+    pub fn events(&self, limit: u32) -> Result<Vec<Event>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT source, external_id, kind, title, time, lat, lon, severity, severity_unit, alert,
+                    country, url
+             FROM event ORDER BY time DESC, source, external_id LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            Ok(Event {
+                source: r.get(0)?,
+                external_id: r.get(1)?,
+                kind: r.get(2)?,
+                title: r.get(3)?,
+                time: r.get(4)?,
+                lat: r.get(5)?,
+                lon: r.get(6)?,
+                severity: r.get(7)?,
+                severity_unit: r.get(8)?,
+                alert: r.get(9)?,
+                country: r.get(10)?,
+                url: r.get(11)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    // ----- time series -----
+
+    /// Store observations. A value that the source has revised is updated
+    /// and gets a new `known_at`. Returns how many points were new or changed.
+    pub fn upsert_series(&self, source: &str, series: &str, points: &[SeriesPoint]) -> Result<usize> {
+        self.upsert_series_at(source, series, points, now_unix())
+    }
+
+    pub fn upsert_series_at(&self, source: &str, series: &str, points: &[SeriesPoint], now: i64) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let mut changed = 0;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO series_point (source, series, date, value, known_at) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(source, series, date) DO UPDATE SET value = excluded.value, known_at = excluded.known_at
+                 WHERE series_point.value <> excluded.value",
+            )?;
+            for p in points {
+                changed += stmt.execute(params![source, series, p.date, p.value, now])?;
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
+    /// Oldest first.
+    pub fn series(&self, source: &str, series: &str) -> Result<Vec<SeriesPoint>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT date, value FROM series_point WHERE source = ?1 AND series = ?2 ORDER BY date",
+        )?;
+        let rows = stmt.query_map(params![source, series], |r| Ok(SeriesPoint { date: r.get(0)?, value: r.get(1)? }))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    /// Every stored series as (source, series, number of points, last date).
+    pub fn series_list(&self) -> Result<Vec<(String, String, u64, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT source, series, count(*), max(date) FROM series_point GROUP BY source, series ORDER BY source, series",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? as u64, r.get(3)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    // ----- sanctions -----
+
+    /// Replace everything stored from one list with a fresh copy.
+    pub fn replace_sanctions(&self, source: &str, entries: &[SanctionEntry]) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM sanction WHERE source = ?1", params![source])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR REPLACE INTO sanction (source, list_id, name, name_key, kind, program)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            for e in entries {
+                stmt.execute(params![source, e.list_id as i64, e.name, normalize_name(&e.name), e.kind, e.program])?;
+            }
+        }
+        tx.commit()?;
+        Ok(entries.len())
+    }
+
+    pub fn sanction_count(&self) -> Result<u64> {
+        let n: i64 = self.conn().query_row("SELECT count(*) FROM sanction", [], |r| r.get(0))?;
+        Ok(n as u64)
+    }
+
+    /// Entries whose normalised primary name equals the normalised query.
+    /// Aliases are not stored, so an empty answer proves nothing.
+    pub fn sanction_matches(&self, name: &str) -> Result<Vec<SanctionEntry>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT list_id, name, kind, program FROM sanction WHERE name_key = ?1 ORDER BY list_id",
+        )?;
+        let rows = stmt.query_map(params![normalize_name(name)], |r| {
+            Ok(SanctionEntry {
+                list_id: r.get::<_, i64>(0)? as u64,
+                name: r.get(1)?,
+                kind: r.get(2)?,
+                program: r.get(3)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     // ----- signal log -----
@@ -666,6 +881,67 @@ mod tests {
         assert!(store.append_log(&rec(2)).is_err());
         assert_eq!(store.log().unwrap().len(), 2);
         assert_eq!(store.last_log().unwrap().unwrap().seq, 2);
+    }
+
+    fn event(id: &str, time: i64, mag: f64) -> Event {
+        Event {
+            source: "usgs".into(),
+            external_id: id.into(),
+            kind: "earthquake".into(),
+            title: format!("M {mag} somewhere"),
+            time,
+            lat: Some(1.0),
+            lon: Some(2.0),
+            severity: Some(mag),
+            severity_unit: Some("magnitude".into()),
+            alert: None,
+            country: None,
+            url: None,
+        }
+    }
+
+    #[test]
+    fn events_are_new_once_and_revisions_keep_first_known_at() {
+        let store = Store::open_in_memory().unwrap();
+        assert_eq!(store.upsert_events_at(&[event("a", 100, 5.0), event("b", 200, 6.0)], 1000).unwrap(), 2);
+        // The source revises one magnitude and adds one event.
+        assert_eq!(store.upsert_events_at(&[event("a", 100, 5.3), event("c", 300, 4.6)], 2000).unwrap(), 1);
+        let events = store.events(10).unwrap();
+        assert_eq!(events.iter().map(|e| e.external_id.as_str()).collect::<Vec<_>>(), ["c", "b", "a"]);
+        assert_eq!(events[2].severity, Some(5.3));
+        let known: i64 = store
+            .conn()
+            .query_row("SELECT known_at FROM event WHERE external_id = 'a'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(known, 1000);
+        assert_eq!(store.events(1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn series_counts_only_new_and_revised_points() {
+        let store = Store::open_in_memory().unwrap();
+        let p = |date: &str, value| SeriesPoint { date: date.into(), value };
+        assert_eq!(store.upsert_series_at("ecb", "EXR.D.SEK.EUR", &[p("2026-11-20", 11.21), p("2026-11-19", 11.14)], 10).unwrap(), 2);
+        assert_eq!(store.upsert_series_at("ecb", "EXR.D.SEK.EUR", &[p("2026-11-20", 11.21)], 20).unwrap(), 0);
+        assert_eq!(store.upsert_series_at("ecb", "EXR.D.SEK.EUR", &[p("2026-11-20", 11.22), p("2026-11-23", 11.23)], 30).unwrap(), 2);
+        let points = store.series("ecb", "EXR.D.SEK.EUR").unwrap();
+        assert_eq!(points.iter().map(|p| p.value).collect::<Vec<_>>(), [11.14, 11.22, 11.23]);
+        assert!(store.series("ecb", "other").unwrap().is_empty());
+        assert_eq!(store.series_list().unwrap(), vec![("ecb".into(), "EXR.D.SEK.EUR".into(), 3, "2026-11-23".into())]);
+    }
+
+    #[test]
+    fn sanctions_are_replaced_whole_and_matched_on_normalised_name() {
+        let store = Store::open_in_memory().unwrap();
+        let entry = |id, name: &str| SanctionEntry { list_id: id, name: name.into(), kind: None, program: Some("TEST".into()) };
+        store.replace_sanctions("ofac", &[entry(1, "ANGLO-CARIBBEAN CO., LTD."), entry(2, "Old Entry Inc")]).unwrap();
+        assert_eq!(store.sanction_matches("Anglo Caribbean Co Ltd").unwrap().len(), 1);
+        assert_eq!(store.sanction_matches("anglo-caribbean").unwrap()[0].list_id, 1);
+        assert!(store.sanction_matches("Caribbean").unwrap().is_empty(), "no partial matches");
+
+        store.replace_sanctions("ofac", &[entry(1, "ANGLO-CARIBBEAN CO., LTD.")]).unwrap();
+        assert_eq!(store.sanction_count().unwrap(), 1);
+        assert!(store.sanction_matches("Old Entry").unwrap().is_empty(), "delisted names disappear");
     }
 
     #[test]

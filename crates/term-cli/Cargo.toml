@@ -17,6 +17,7 @@ term-resolve.workspace = true
 term-store.workspace = true
 term-signal.workspace = true
 term-api.workspace = true
+term-sources.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 serde_json.workspace = true

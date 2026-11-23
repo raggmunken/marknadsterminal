@@ -1,0 +1,78 @@
+# Nästa uppgifter, i planens uppgiftsformat.
+# "vem: människa" betyder att en agent inte får göra uppgiften.
+# Ordningen är ordningen de bör göras i.
+
+- uppgift: start/fyll-i-env
+  vem: människa
+  mål: .env finns med TERM_USER_AGENT och ANTHROPIC_API_KEY
+  klart_när:
+    - term fetch 1467858 --out gm_10k.htm sparar ett dokument
+
+- uppgift: start/se-fonstret
+  vem: människa
+  mål: Någon öppnar gränssnittet och tittar
+  klart_när:
+    - cargo run -p term-ui startar och NTC KEDJA ritar leverantörer till vänster och kunder till höger
+    - ett klick på en nod visar belägget i BEVIS
+    - Godkänn och Avvisa ändrar kön i GRANSKA
+    - det som ser fel ut är nedskrivet som nya uppgifter
+
+- uppgift: kedja/riktig-10k
+  vem: agent
+  mål: Steg 1 till 5 körs på riktiga dokument
+  kräver: start/fyll-i-env
+  klart_när:
+    - html_to_text tappar ingen text ur Item 1 och Item 1A, kontrollerat mot tre stickprov
+    - term passages väljer stycken som nämner kunder eller leverantörer i minst fem av fem bolag
+    - companies import klarar SEC:s riktiga fil company_tickers.json
+  berör: crates/term-ingest, crates/term-parse, crates/term-resolve
+  får_inte_röra: fixtures/*.facit.json
+
+- uppgift: kedja/facit-20-bolag
+  vem: människa
+  mål: Facit för 20 bolag med kända kunder och leverantörer
+  klart_när:
+    - fixtures/facit/<cik>.json finns för 20 bolag
+    - varje rad har en källa som en annan person har kontrollerat
+
+- uppgift: kedja/sprakmodell-skarpt
+  vem: agent
+  mål: AnthropicExtractor körs skarpt och jämförs med den regelbaserade
+  kräver: kedja/riktig-10k, kedja/facit-20-bolag
+  klart_när:
+    - precision och täckning per bolag finns i en tabell för båda extraktorerna
+    - tokens in och ut per bolag loggas och jämförs med antagandet 60 000 in och 3 000 ut
+    - andelen relationer som faller i citatkontrollen redovisas
+  berör: crates/term-extract, crates/term-cli
+
+- uppgift: kedja/omvand-sokning-skarpt
+  vem: agent
+  mål: Steg 6 fungerar mot EDGAR:s fulltextsökning
+  kräver: start/fyll-i-env
+  klart_när:
+    - ett riktigt svar är sparat som testfil och parse_full_text klarar det
+    - 20 sökningar går igenom takthållaren utan blockering
+    - term reverse hämtar och läser in motparternas dokument så att relationer blir bekräftade av båda
+  berör: crates/term-ingest, crates/term-cli
+
+- uppgift: lagring/postgres-eller-sqlite
+  vem: människa
+  mål: Beslut om databas
+  not: Planen säger PostgreSQL. Prototypen kör SQLite. Flera samtidiga användare talar för PostgreSQL.
+
+- uppgift: signal/kurshistorik
+  vem: människa
+  mål: Provkonto hos en kurskälla och tio kända avlistade bolag hämtade
+  klart_när:
+    - alla tio finns med kurs fram till sista handelsdag
+    - pris och villkor för lagring och flera användare är nedskrivna
+
+- uppgift: signal/forsta-regeln
+  vem: agent
+  mål: Kundchocken som regel genom grind 1 och 2
+  kräver: signal/kurshistorik, godkända relationer för minst 100 bolag
+  klart_när:
+    - hypotesen är registrerad som Rule innan första testet körs
+    - testet läser bara rader med known_at före testdatum
+    - resultatet går genom Rule::record_backtest, oavsett utfall
+  berör: crates/term-signal, nytt paket term-backtest

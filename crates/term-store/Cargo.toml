@@ -1,0 +1,10 @@
+[package]
+name = "term-store"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+term-core.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true

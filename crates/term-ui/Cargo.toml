@@ -1,0 +1,12 @@
+[package]
+name = "term-ui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+term-core.workspace = true
+term-store.workspace = true
+eframe.workspace = true
+egui_dock.workspace = true
+egui_graphs.workspace = true

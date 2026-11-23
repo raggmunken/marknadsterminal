@@ -1,0 +1,7 @@
+[
+  { "counterparty": "Haldenfjord Motors Corp.", "direction": "customer" },
+  { "counterparty": "Brightwater Retail Group", "direction": "customer" },
+  { "counterparty": "Tallgrass Distribution LLC", "direction": "customer" },
+  { "counterparty": "Kestrelmark Semiconductor Ltd.", "direction": "supplier" },
+  { "counterparty": "Polarvik Castings Ltd", "direction": "supplier" }
+]

@@ -15,9 +15,12 @@
 //! | `worldbank` | World Bank indicators | none | run live 2026-11-23 |
 //! | `esef` | filings.xbrl.org, European annual reports | none | run live 2026-11-23 |
 //! | `ofac` | OFAC sanctions list | none | run live 2026-11-23 |
+//! | `epa_frs` | EPA facility register, where US plants are | none | run live 2026-11-23 |
+//! | `usaspending` | USAspending, federal subcontracts | none | run live 2026-11-23 |
 //! | `fred` | FRED, US rates and macro | free key | NOT run, no key |
 
 pub mod ecb;
+pub mod epa_frs;
 pub mod esef;
 pub mod fred;
 pub mod gdacs;
@@ -25,6 +28,7 @@ pub mod gleif;
 pub mod ofac;
 pub mod openfigi;
 pub mod riksbank;
+pub mod usaspending;
 pub mod usgs;
 pub mod worldbank;
 

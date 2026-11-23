@@ -10,10 +10,15 @@ pub enum View {
     Granska,
     /// Events that may disturb a chain: earthquakes, cyclones, floods.
     Handelser,
+    /// Everything weighed together for the open company.
+    Analys,
+    /// Stored time series as charts.
+    Serier,
 }
 
 impl View {
-    pub const ALL: [View; 4] = [View::Kedja, View::Bevis, View::Granska, View::Handelser];
+    pub const ALL: [View; 6] =
+        [View::Kedja, View::Analys, View::Bevis, View::Granska, View::Handelser, View::Serier];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -21,6 +26,8 @@ impl View {
             View::Bevis => "BEVIS",
             View::Granska => "GRANSKA",
             View::Handelser => "HÄNDELSER",
+            View::Analys => "ANALYS",
+            View::Serier => "SERIER",
         }
     }
 
@@ -79,6 +86,8 @@ mod tests {
     #[test]
     fn view_alone_only_changes_focus() {
         assert_eq!(parse("granska"), Ok(Command::Focus(View::Granska)));
+        assert_eq!(parse("analys"), Ok(Command::Focus(View::Analys)));
+        assert_eq!(parse("GM ANALYS"), Ok(Command::Open { target: "GM".into(), view: View::Analys }));
     }
 
     #[test]
@@ -91,7 +100,7 @@ mod tests {
     #[test]
     fn errors_say_what_to_type() {
         assert!(parse("").unwrap_err().contains("GM KEDJA"));
-        assert!(parse("GM KURS").unwrap_err().contains("KEDJA, BEVIS, GRANSKA, HÄNDELSER"));
+        assert!(parse("GM KURS").unwrap_err().contains("KEDJA, ANALYS, BEVIS, GRANSKA, HÄNDELSER, SERIER"));
         assert!(parse("a b c").is_err());
     }
 }

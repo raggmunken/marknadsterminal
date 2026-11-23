@@ -1,8 +1,9 @@
 //! The terminal window.
 //!
-//! Four dockable views so far: KEDJA (suppliers, the company, customers),
-//! BEVIS (the evidence behind the selected relation, with approve and
-//! reject), GRANSKA (the review queue) and HÄNDELSER (stored events).
+//! Six dockable views so far: KEDJA (suppliers, the company, customers),
+//! ANALYS (everything weighed together), BEVIS (the evidence behind the
+//! selected relation, with approve and reject), GRANSKA (the review
+//! queue), HÄNDELSER (stored events) and SERIER (time series as charts).
 //! It reads and writes the same database file as the command line.
 //!
 //! The chain is drawn by hand as three columns of boxes. The plan names
@@ -19,13 +20,60 @@ use command::{Command, View};
 use eframe::egui;
 use egui_dock::{DockArea, DockState, NodeIndex as DockNode, TabViewer};
 use term_core::time::unix_to_iso_minutes;
-use term_core::{Cik, Company, Direction, Event, ReviewStatus, StoredRelation, Unit};
+use term_analysis::{analyze_company, Analysis, Level};
+use term_core::{Cik, Company, Direction, Event, ReviewStatus, SeriesPoint, StoredRelation, Unit};
 use term_store::{ChainView, Store};
 
 const BOX_HEIGHT: f32 = 46.0;
 const BOX_GAP: f32 = 10.0;
 const HEADER_HEIGHT: f32 = 26.0;
 const MARGIN: f32 = 12.0;
+
+const AMBER: egui::Color32 = egui::Color32::from_rgb(255, 176, 0);
+const RED: egui::Color32 = egui::Color32::from_rgb(255, 96, 96);
+const GREEN: egui::Color32 = egui::Color32::from_rgb(96, 208, 128);
+
+/// Dark with an amber accent, in the manner of a trading terminal.
+fn apply_theme(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.panel_fill = egui::Color32::from_rgb(13, 15, 19);
+    visuals.window_fill = visuals.panel_fill;
+    visuals.extreme_bg_color = egui::Color32::from_rgb(5, 6, 8);
+    visuals.faint_bg_color = egui::Color32::from_rgb(22, 25, 31);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(92, 64, 0);
+    visuals.selection.stroke = egui::Stroke::new(1.0, AMBER);
+    visuals.hyperlink_color = egui::Color32::from_rgb(120, 186, 255);
+    visuals.warn_fg_color = AMBER;
+    visuals.error_fg_color = RED;
+    ctx.set_visuals(visuals);
+}
+
+fn level_color(level: Level) -> egui::Color32 {
+    match level {
+        Level::Alert => RED,
+        Level::Watch => AMBER,
+        Level::Info => egui::Color32::from_gray(150),
+    }
+}
+
+fn level_word(level: Level) -> &'static str {
+    match level {
+        Level::Alert => "LARM",
+        Level::Watch => "BEVAKA",
+        Level::Info => "INFO",
+    }
+}
+
+/// 2 493 421 becomes "2,5 MUSD". Small sums are shown in thousands.
+fn usd_short(value: f64) -> String {
+    if value.abs() >= 1e9 {
+        format!("{:.1} GUSD", value / 1e9).replace('.', ",")
+    } else if value.abs() >= 1e6 {
+        format!("{:.1} MUSD", value / 1e6).replace('.', ",")
+    } else {
+        format!("{:.0} kUSD", value / 1e3)
+    }
+}
 
 /// Where the boxes of the chain go.
 #[derive(Debug, Clone, PartialEq)]
@@ -42,22 +90,21 @@ fn column_height(rows: usize) -> f32 {
 }
 
 /// Three columns inside `width`, starting at `origin`: suppliers to the
-/// left, the company in the middle, customers to the right. Each column
-/// is centred on the same horizontal line.
+/// left, the company in the middle, customers to the right. All columns
+/// start at the same top edge, so that the company stays in view however
+/// long the lists are.
 fn chain_layout(origin: egui::Pos2, width: f32, suppliers: usize, customers: usize) -> ChainLayout {
     let lane = (width - 2.0 * MARGIN) / 3.0;
     let box_width = (lane - 28.0).clamp(90.0, 280.0);
     let body = column_height(suppliers.max(customers).max(1));
     let top = origin.y + HEADER_HEIGHT;
-    let centre_y = top + body / 2.0;
 
     let column = |lane_index: f32, rows: usize| -> Vec<egui::Rect> {
         let x = origin.x + MARGIN + lane * lane_index + (lane - box_width) / 2.0;
-        let start = centre_y - column_height(rows) / 2.0;
         (0..rows)
             .map(|i| {
                 egui::Rect::from_min_size(
-                    egui::pos2(x, start + i as f32 * (BOX_HEIGHT + BOX_GAP)),
+                    egui::pos2(x, top + i as f32 * (BOX_HEIGHT + BOX_GAP)),
                     egui::vec2(box_width, BOX_HEIGHT),
                 )
             })
@@ -84,6 +131,12 @@ struct State {
     note: String,
     pending: Vec<StoredRelation>,
     events: Vec<Event>,
+    analysis: Option<Analysis>,
+    series_list: Vec<(String, String, u64, String)>,
+    series_selected: Option<(String, String)>,
+    series_points: Vec<SeriesPoint>,
+    /// Counts for the status line: relations, places, names on the sanctions list, events.
+    totals: (usize, usize, u64, u64),
     focus: Option<View>,
 }
 
@@ -98,10 +151,10 @@ fn status_text(status: ReviewStatus) -> &'static str {
 fn amount_text(r: &StoredRelation) -> String {
     match &r.relation.amount {
         Some(a) => {
-            let unit = if a.unit == Unit::Percent { "%" } else { "USD" };
+            let value = if a.unit == Unit::Percent { format!("{} %", a.value) } else { usd_short(a.value) };
             match &a.basis {
-                Some(basis) => format!("{} {unit} av {basis}", a.value),
-                None => format!("{} {unit}", a.value),
+                Some(basis) => format!("{value} av {basis}"),
+                None => value,
             }
         }
         None => "inget belopp angivet".to_string(),
@@ -112,7 +165,7 @@ fn amount_text(r: &StoredRelation) -> String {
 fn box_detail(r: &StoredRelation) -> String {
     let share = match &r.relation.amount {
         Some(a) if a.unit == Unit::Percent => format!("{} %", a.value),
-        Some(a) => format!("{} USD", a.value),
+        Some(a) => usd_short(a.value),
         None => "utan belopp".to_string(),
     };
     let status = match r.status {
@@ -137,10 +190,17 @@ impl State {
             note: String::new(),
             pending: Vec::new(),
             events: Vec::new(),
+            analysis: None,
+            series_list: Vec::new(),
+            series_selected: None,
+            series_points: Vec::new(),
+            totals: (0, 0, 0, 0),
             focus: None,
         };
         state.reload_pending();
         state.reload_events();
+        state.reload_series();
+        state.reload_totals();
         state
     }
 
@@ -158,12 +218,42 @@ impl State {
         }
     }
 
+    fn reload_series(&mut self) {
+        self.series_list = self.store.series_list().unwrap_or_default();
+        if self.series_selected.is_none() {
+            self.series_selected = self.series_list.first().map(|(source, series, _, _)| (source.clone(), series.clone()));
+        }
+        self.series_points = match &self.series_selected {
+            Some((source, series)) => self.store.series(source, series).unwrap_or_default(),
+            None => Vec::new(),
+        };
+    }
+
+    fn reload_totals(&mut self) {
+        self.totals = (
+            self.store.all_relations().map(|r| r.len()).unwrap_or(0),
+            self.store.locations(None).map(|l| l.len()).unwrap_or(0),
+            self.store.sanction_count().unwrap_or(0),
+            self.store.event_count().unwrap_or(0),
+        );
+    }
+
+    fn reload_analysis(&mut self) {
+        self.analysis = match self.cik {
+            Some(cik) => analyze_company(&self.store, cik).ok(),
+            None => None,
+        };
+    }
+
     fn run_command(&mut self) {
         let input = std::mem::take(&mut self.command);
         match command::parse(&input) {
             Ok(Command::Focus(view)) => {
-                if view == View::Handelser {
-                    self.reload_events();
+                match view {
+                    View::Handelser => self.reload_events(),
+                    View::Serier => self.reload_series(),
+                    View::Analys => self.reload_analysis(),
+                    _ => {}
                 }
                 self.focus = Some(view);
             }
@@ -210,6 +300,8 @@ impl State {
             }
             Err(e) => self.message = format!("Databasfel: {e}"),
         }
+        self.reload_analysis();
+        self.reload_totals();
     }
 
     fn company_name(&self) -> String {
@@ -229,8 +321,11 @@ impl State {
         let note = if note.is_empty() { None } else { Some(note) };
         match self.store.set_review(id, status, note) {
             Ok(r) => {
-                self.message = format!("{} är nu {}.", r.relation.counterparty.name, status_text(r.status));
                 self.note.clear();
+                self.reload_pending();
+                self.reload_chain();
+                self.message = format!("{} är nu {}.", r.relation.counterparty.name, status_text(r.status));
+                return;
             }
             Err(e) => self.message = format!("Kunde inte spara beslutet: {e}"),
         }
@@ -430,13 +525,128 @@ impl State {
         }
     }
 
+    fn analysis_pane(&mut self, ui: &mut egui::Ui) {
+        let Some(analysis) = self.analysis.clone() else {
+            ui.label("Inget bolag valt. Analysen väger ihop kedja, granskning, sanktioner, platser och händelser.");
+            return;
+        };
+        ui.horizontal_wrapped(|ui| {
+            let figure = |ui: &mut egui::Ui, label: &str, value: String| {
+                ui.label(egui::RichText::new(label).weak());
+                ui.label(egui::RichText::new(value).strong());
+                ui.add_space(10.0);
+            };
+            figure(ui, "Leverantörer", analysis.suppliers.to_string());
+            figure(ui, "Kunder", analysis.customers.to_string());
+            figure(ui, "Ogranskade", analysis.pending.to_string());
+            figure(ui, "Platser", analysis.places.to_string());
+            figure(ui, "Händelser 30 d", analysis.events_in_window.to_string());
+            if let Some(share) = analysis.largest_customer_share {
+                figure(ui, "Största kund", format!("{share} %"));
+            }
+        });
+        ui.separator();
+        let mut clicked = None;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            for finding in &analysis.findings {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{:<6}", level_word(finding.level)))
+                            .monospace()
+                            .strong()
+                            .color(level_color(finding.level)),
+                    );
+                    ui.label(egui::RichText::new(finding.area).strong());
+                    match finding.relation_id {
+                        Some(id) => {
+                            if ui.link(&finding.text).on_hover_text("Visa belägget").clicked() {
+                                clicked = Some(id);
+                            }
+                        }
+                        None => {
+                            ui.label(&finding.text);
+                        }
+                    }
+                });
+                ui.label(egui::RichText::new(format!("        {}", finding.basis)).weak().small());
+                ui.add_space(4.0);
+            }
+            ui.separator();
+            ui.label(
+                egui::RichText::new("Analysen beskriver exponering. Den säger inte vad någon bör köpa eller sälja.")
+                    .weak()
+                    .small(),
+            );
+        });
+        if let Some(id) = clicked {
+            self.selected = Some(id);
+            self.focus = Some(View::Bevis);
+        }
+    }
+
+    fn series_pane(&mut self, ui: &mut egui::Ui) {
+        if self.series_list.is_empty() {
+            ui.label("Inga serier sparade. Hämta till exempel med: term series fetch ecb SEK");
+            return;
+        }
+        let mut picked = None;
+        ui.horizontal_wrapped(|ui| {
+            for (source, series, _, _) in &self.series_list {
+                let current = self.series_selected.as_ref() == Some(&(source.clone(), series.clone()));
+                if ui.selectable_label(current, format!("{source} {series}")).clicked() {
+                    picked = Some((source.clone(), series.clone()));
+                }
+            }
+        });
+        if picked.is_some() {
+            self.series_selected = picked;
+            self.reload_series();
+        }
+        let points = &self.series_points;
+        let (Some(first), Some(last)) = (points.first(), points.last()) else { return };
+        let low = points.iter().map(|p| p.value).fold(f64::INFINITY, f64::min);
+        let high = points.iter().map(|p| p.value).fold(f64::NEG_INFINITY, f64::max);
+        let change = if first.value != 0.0 { 100.0 * (last.value / first.value - 1.0) } else { 0.0 };
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("{}", last.value)).heading().strong());
+            ui.label(
+                egui::RichText::new(format!("{change:+.2} % sedan {}", first.date))
+                    .color(if change >= 0.0 { GREEN } else { RED }),
+            );
+            ui.label(egui::RichText::new(format!("lägst {low}  högst {high}  {} punkter", points.len())).weak());
+        });
+
+        let size = egui::vec2(ui.available_width(), ui.available_height().max(80.0));
+        let (area, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        let painter = ui.painter_at(area);
+        let plot = area.shrink2(egui::vec2(6.0, 16.0));
+        painter.rect_filled(area, 4.0, ui.visuals().extreme_bg_color);
+        let span = if high > low { high - low } else { 1.0 };
+        let steps = (points.len().max(2) - 1) as f32;
+        let line: Vec<egui::Pos2> = points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let x = plot.left() + plot.width() * i as f32 / steps;
+                let y = plot.bottom() - plot.height() * ((p.value - low) / span) as f32;
+                egui::pos2(x, y)
+            })
+            .collect();
+        painter.add(egui::Shape::line(line, egui::Stroke::new(1.8, AMBER)));
+        let small = egui::FontId::proportional(11.0);
+        let weak = ui.visuals().weak_text_color();
+        painter.text(area.left_bottom() + egui::vec2(6.0, -2.0), egui::Align2::LEFT_BOTTOM, &first.date, small.clone(), weak);
+        painter.text(area.right_bottom() + egui::vec2(-6.0, -2.0), egui::Align2::RIGHT_BOTTOM, &last.date, small.clone(), weak);
+        painter.text(area.left_top() + egui::vec2(6.0, 2.0), egui::Align2::LEFT_TOP, format!("{high}"), small, weak);
+    }
+
     fn events_pane(&mut self, ui: &mut egui::Ui) {
         if self.events.is_empty() {
             ui.label("Inga händelser sparade. Hämta med kommandot: term events fetch");
             return;
         }
         ui.label(format!(
-            "{} händelser, nyast först. De är ännu inte kopplade till anläggningar i kedjorna.",
+            "De {} senaste händelserna. ANALYS jämför dem med bolagens kända platser.",
             self.events.len()
         ));
         egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
@@ -477,6 +687,8 @@ impl TabViewer for Viewer<'_> {
             View::Bevis => self.state.evidence_pane(ui),
             View::Granska => self.state.review_pane(ui),
             View::Handelser => self.state.events_pane(ui),
+            View::Analys => self.state.analysis_pane(ui),
+            View::Serier => self.state.series_pane(ui),
         }
     }
 
@@ -492,10 +704,11 @@ struct Terminal {
 
 impl Terminal {
     fn new(store: Store) -> Self {
-        // The chain to the left. Evidence top right, events and queue below it.
+        // Left: the chain above the analysis. Right: evidence above events, series and queue.
         let mut dock = DockState::new(vec![View::Kedja]);
-        let [_, right] = dock.main_surface_mut().split_right(DockNode::root(), 0.58, vec![View::Bevis]);
-        dock.main_surface_mut().split_below(right, 0.5, vec![View::Handelser, View::Granska]);
+        let [left, right] = dock.main_surface_mut().split_right(DockNode::root(), 0.56, vec![View::Bevis]);
+        dock.main_surface_mut().split_below(left, 0.52, vec![View::Analys]);
+        dock.main_surface_mut().split_below(right, 0.45, vec![View::Handelser, View::Serier, View::Granska]);
         Self { dock, state: State::new(store) }
     }
 
@@ -514,9 +727,33 @@ impl Terminal {
                     self.state.run_command();
                     field.request_focus();
                 }
-                ui.label(&self.state.message);
+                ui.separator();
+                for view in View::ALL {
+                    if ui.small_button(view.title()).clicked() {
+                        self.state.command = view.title().to_string();
+                        self.state.run_command();
+                    }
+                }
+                ui.separator();
+                ui.label(egui::RichText::new(&self.state.message).color(AMBER));
             });
             ui.add_space(4.0);
+        });
+
+        egui::Panel::bottom("statusrad").show(ui, |ui| {
+            let s = &self.state;
+            ui.horizontal(|ui| {
+                let text = format!(
+                    "{} relationer   {} väntar på granskning   {} händelser   {} platser   {} namn på sanktionslistan   {} serier",
+                    s.totals.0,
+                    s.pending.len(),
+                    s.totals.3,
+                    s.totals.1,
+                    s.totals.2,
+                    s.series_list.len()
+                );
+                ui.label(egui::RichText::new(text).weak().small());
+            });
         });
 
         if let Some(view) = self.state.focus.take() {
@@ -574,7 +811,8 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Marknadsterminalen",
         options,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            apply_theme(&cc.egui_ctx);
             let mut terminal = Terminal::new(store);
             if let Some(command) = startup_command {
                 terminal.state.command = command;
@@ -654,11 +892,11 @@ mod tests {
     }
 
     #[test]
-    fn columns_share_one_centre_line() {
-        let l = chain_layout(egui::Pos2::ZERO, 900.0, 2, 6);
-        let mid = |rects: &[egui::Rect]| (rects.first().unwrap().top() + rects.last().unwrap().bottom()) / 2.0;
-        assert!((mid(&l.suppliers) - l.company.center().y).abs() < 0.01);
-        assert!((mid(&l.customers) - l.company.center().y).abs() < 0.01);
+    fn columns_start_at_the_same_top_so_the_company_stays_in_view() {
+        let l = chain_layout(egui::Pos2::ZERO, 900.0, 2, 40);
+        assert_eq!(l.suppliers[0].top(), l.company.top());
+        assert_eq!(l.customers[0].top(), l.company.top());
+        assert!(l.company.bottom() < 120.0, "the company is near the top even with forty customers");
     }
 
     #[test]
@@ -756,6 +994,45 @@ mod tests {
         terminal.state.run_command();
         assert_eq!(terminal.state.focus, Some(View::Handelser));
         frames(&mut terminal, 3);
+    }
+
+    #[test]
+    fn analysis_follows_the_open_company_and_reviews() {
+        let mut terminal = Terminal::new(seeded());
+        assert!(terminal.state.analysis.is_none());
+        terminal.state.open("NTC");
+        let a = terminal.state.analysis.clone().unwrap();
+        assert_eq!((a.customers, a.suppliers, a.pending), (2, 1, 3));
+        assert_eq!(a.largest_customer_share, Some(21.0));
+        assert!(a.findings.iter().any(|f| f.area == "Koncentration" && f.level == Level::Alert));
+
+        let id = terminal.state.pending[0].id;
+        terminal.state.review(id, ReviewStatus::Approved);
+        assert_eq!(terminal.state.analysis.as_ref().unwrap().pending, 2, "the analysis is recomputed after a review");
+        assert!(terminal.state.message.contains("godkänd"), "the review message is not overwritten: {}", terminal.state.message);
+        frames(&mut terminal, 3);
+    }
+
+    #[test]
+    fn series_view_loads_the_first_series_and_draws_it() {
+        let store = seeded();
+        let points: Vec<SeriesPoint> =
+            (1..=9).map(|d| SeriesPoint { date: format!("2026-11-0{d}"), value: 11.0 + d as f64 / 10.0 }).collect();
+        store.upsert_series("ecb", "EXR.D.SEK.EUR", &points).unwrap();
+        let mut terminal = Terminal::new(store);
+        assert_eq!(terminal.state.series_selected, Some(("ecb".into(), "EXR.D.SEK.EUR".into())));
+        assert_eq!(terminal.state.series_points.len(), 9);
+        terminal.state.command = "serier".into();
+        terminal.state.run_command();
+        frames(&mut terminal, 3);
+        assert_eq!(terminal.state.totals.0, 3, "the status line counts the three seeded relations");
+    }
+
+    #[test]
+    fn dollar_amounts_are_shortened() {
+        assert_eq!(usd_short(2_493_421.0), "2,5 MUSD");
+        assert_eq!(usd_short(360_714.0), "361 kUSD");
+        assert_eq!(usd_short(3_200_000_000.0), "3,2 GUSD");
     }
 
     #[test]

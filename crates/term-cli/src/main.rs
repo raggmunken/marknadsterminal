@@ -15,7 +15,10 @@ use term_ingest::{document_url, latest_of_form, EdgarClient};
 use term_parse::{html_to_text, select_passages, DEFAULT_MIN_SCORE};
 use term_core::time::unix_to_iso_minutes;
 use term_resolve::{merge, Directory, Resolution};
-use term_sources::{ecb, esef, fred, gdacs, gleif, ofac, openfigi, riksbank, usgs, worldbank, Http};
+use term_analysis::{analyze_company, Level};
+use term_core::names::normalize_name;
+use term_core::Location;
+use term_sources::{ecb, epa_frs, esef, fred, gdacs, gleif, ofac, openfigi, riksbank, usaspending, usgs, worldbank, Http};
 use term_store::{now_unix, Store, Upsert};
 
 #[derive(Parser)]
@@ -125,11 +128,51 @@ enum Command {
         #[command(subcommand)]
         action: SanctionsAction,
     },
+    /// Väg ihop allt som är känt om ett bolag: kedja, granskning, sanktioner, platser, händelser
+    Analyze { target: String },
+    /// Platser som hör till bolag, så att händelser kan kopplas till kedjan
+    Locations {
+        #[command(subcommand)]
+        action: LocationsAction,
+    },
+    /// Hämta bolagets federala underkontrakt hos USAspending. Varje huvudleverantör blir en kund
+    Subawards {
+        target: String,
+        /// Första dag, ÅÅÅÅ-MM-DD. Standard är ett år bakåt
+        #[arg(long)]
+        from: Option<String>,
+    },
     /// Senaste europeiska årsredovisningar (ESEF) för ett land, till exempel SE
     Esef {
         country: String,
         #[arg(long, default_value_t = 10)]
         limit: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum LocationsAction {
+    /// Sök anläggningar i USA hos EPA. Ange vems de är och vad som ska sökas
+    FetchEpa {
+        /// Bolaget som platserna ska höra till: CIK, ticker eller ett motpartsnamn
+        owner: String,
+        /// Sökord i anläggningens namn. Standard är bolagsnamnet utan bolagsform
+        #[arg(long)]
+        search: Option<String>,
+        /// Delstat, två bokstäver
+        #[arg(long)]
+        state: Option<String>,
+    },
+    /// Lägg till en plats för hand
+    Add {
+        owner: String,
+        lat: f64,
+        lon: f64,
+        #[arg(long)]
+        label: String,
+    },
+    List {
+        owner: Option<String>,
     },
 }
 
@@ -318,7 +361,7 @@ fn status_label(status: ReviewStatus) -> &'static str {
 fn print_relation(r: &StoredRelation) {
     let amount = match &r.relation.amount {
         Some(a) if a.unit == Unit::Percent => format!("{} %", a.value),
-        Some(a) => format!("{} USD", a.value),
+        Some(a) => format!("{:.0} USD", a.value),
         None => "utan belopp".to_string(),
     };
     let cik = match r.relation.counterparty.cik {
@@ -720,6 +763,103 @@ async fn main() -> Result<()> {
                     println!("{caveat}");
                 }
             }
+        }
+
+        Command::Analyze { target } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let a = analyze_company(&store, cik)?;
+            println!("{} (CIK {cik})", a.company);
+            println!(
+                "{} leverantörer, {} kunder, {} ogranskade, {} kända platser, {} händelser senaste 30 dagarna",
+                a.suppliers, a.customers, a.pending, a.places, a.events_in_window
+            );
+            if let Some(share) = a.largest_customer_share {
+                println!("Största kund {share} %, namngivna kunder tillsammans {} %", a.disclosed_customer_share);
+            }
+            println!();
+            for f in &a.findings {
+                let mark = match f.level {
+                    Level::Alert => "LARM ",
+                    Level::Watch => "BEVAKA",
+                    Level::Info => "INFO ",
+                };
+                println!("{mark:<7} {:<14} {}", f.area, f.text);
+                println!("                       underlag: {}", f.basis);
+            }
+            println!();
+            println!("Analysen beskriver exponering. Den säger inte vad någon bör köpa eller sälja.");
+        }
+
+        Command::Locations { action } => {
+            let store = open()?;
+            // An owner is a company in the directory, or any counterparty name.
+            let owner_name = |raw: &str| -> Result<String> {
+                Ok(match resolve_target(&store, raw) {
+                    Ok(cik) => store.company(cik)?.map(|c| c.name).unwrap_or_else(|| raw.to_string()),
+                    Err(_) => raw.to_string(),
+                })
+            };
+            match action {
+                LocationsAction::FetchEpa { owner, search, state } => {
+                    let owner = owner_name(&owner)?;
+                    let search = search.unwrap_or_else(|| normalize_name(&owner));
+                    let places = epa_frs::fetch(&Http::new()?, &search, state.as_deref(), &owner).await?;
+                    let n = store.upsert_locations(&places)?;
+                    println!("{n} anläggningar med koordinater sparade för {owner} (sökord {search:?}).");
+                    println!("Sökningen går på anläggningens namn och kan ge fel träffar. Gå igenom listan: term locations list");
+                }
+                LocationsAction::Add { owner, lat, lon, label } => {
+                    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+                        bail!("latitud ska ligga mellan -90 och 90, longitud mellan -180 och 180");
+                    }
+                    let owner = owner_name(&owner)?;
+                    let external_id = format!("{}:{}", normalize_name(&owner), normalize_name(&label));
+                    store.upsert_locations(&[Location { owner: owner.clone(), label, lat, lon, source: "manual".into(), external_id }])?;
+                    println!("sparad för {owner}");
+                }
+                LocationsAction::List { owner } => {
+                    let owner = owner.map(|o| owner_name(&o)).transpose()?;
+                    let places = store.locations(owner.as_deref())?;
+                    if places.is_empty() {
+                        println!("Inga platser sparade.");
+                    }
+                    for p in places {
+                        println!("{:<34} {:>9.4} {:>10.4}  {:<8} {}", p.owner, p.lat, p.lon, p.source, p.label);
+                    }
+                }
+            }
+        }
+
+        Command::Subawards { target, from } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let Some(company) = store.company(cik)? else {
+                bail!("CIK {cik} finns inte i bolagslistan. Lägg till det med: term companies add");
+            };
+            let to = unix_to_iso_minutes(now_unix())[..10].to_string();
+            let from = from.unwrap_or_else(|| unix_to_iso_minutes(now_unix() - 365 * 86_400)[..10].to_string());
+            let search = normalize_name(&company.name);
+            let rows = usaspending::fetch(&Http::new()?, &search, &from, &to, 100).await?;
+            let relations = usaspending::customer_relations(cik, &company.name, &rows);
+            let (mut new, mut changed) = (0, 0);
+            for relation in &relations {
+                match store.upsert_relation(relation)? {
+                    Upsert::Inserted(_) => new += 1,
+                    Upsert::Updated(_) => changed += 1,
+                    Upsert::Unchanged(_) => {}
+                }
+            }
+            println!(
+                "{} underkontrakt hämtade för {} ({from} till {to}). {} kunder funna: {new} nya, {changed} ändrade.",
+                rows.len(),
+                company.name,
+                relations.len()
+            );
+            if relations.is_empty() && !rows.is_empty() {
+                println!("Raderna gällde bolag med liknande namn. Prova bolagets exakta registrerade namn.");
+            }
+            println!("De väntar på granskning: term review list");
         }
 
         Command::Esef { country, limit } => {

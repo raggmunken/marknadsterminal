@@ -1,0 +1,58 @@
+{
+ "Results": {
+  "FRSFacility": [
+   {
+    "RegistryId": "110072282454",
+    "FacilityName": "B-O-C GROUP A DIV OF GENERAL MOTORS CORP",
+    "LocationAddress": "920 TOWNSEND STREET",
+    "SupplementalLocation": null,
+    "CityName": "LANSING",
+    "CountyName": "INGHAM",
+    "StateAbbr": "MI",
+    "ZipCode": "48921",
+    "FIPSCode": null,
+    "Latitude83": "42.72418",
+    "Longitude83": "-84.55554"
+   },
+   {
+    "RegistryId": "110017439636",
+    "FacilityName": "B.O.C. GROUP, GENERAL MOTORS CORP.",
+    "LocationAddress": null,
+    "SupplementalLocation": null,
+    "CityName": "KALAMAZOO",
+    "CountyName": "KALAMAZOO ",
+    "StateAbbr": "MI",
+    "ZipCode": "49007",
+    "FIPSCode": null,
+    "Latitude83": null,
+    "Longitude83": null
+   },
+   {
+    "RegistryId": "110064351767",
+    "FacilityName": "GENERAL MOTORS",
+    "LocationAddress": "30800 MOUND RD",
+    "SupplementalLocation": null,
+    "CityName": "WARREN",
+    "CountyName": "MACOMB ",
+    "StateAbbr": "MI",
+    "ZipCode": "48092",
+    "FIPSCode": null,
+    "Latitude83": "42.518221",
+    "Longitude83": "-83.046759"
+   },
+   {
+    "RegistryId": "110040103919",
+    "FacilityName": "GENERAL MOTORS",
+    "LocationAddress": "902 E LEITH ST",
+    "SupplementalLocation": null,
+    "CityName": "FLINT",
+    "CountyName": "GENESEE",
+    "StateAbbr": "MI",
+    "ZipCode": "48550",
+    "FIPSCode": "26049",
+    "Latitude83": "43.04317",
+    "Longitude83": "-83.68876"
+   }
+  ]
+ }
+}

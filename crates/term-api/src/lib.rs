@@ -52,6 +52,7 @@ pub fn router(store: Arc<Store>) -> Router {
         .route("/health", get(health))
         .route("/companies/{cik}", get(company))
         .route("/companies/{cik}/chain", get(chain))
+        .route("/companies/{cik}/analysis", get(analysis))
         .route("/relations/{id}", get(relation))
         .route("/relations/{id}/review", post(review))
         .route("/review/pending", get(pending))
@@ -117,6 +118,13 @@ async fn chain(
         "suppliers": to_json(&view.suppliers)?,
         "customers": to_json(&view.customers)?,
     })))
+}
+
+/// Everything the terminal can say about one company. Includes relations
+/// that are not reviewed yet, and says so in its findings.
+async fn analysis(State(store): State<Arc<Store>>, Path(cik): Path<String>) -> ApiResult {
+    let cik = parse_cik(&cik)?;
+    Ok(Json(to_json(&term_analysis::analyze_company(&store, cik)?)?))
 }
 
 async fn relation(State(store): State<Arc<Store>>, Path(id): Path<i64>) -> ApiResult {
@@ -232,6 +240,18 @@ mod tests {
         let (_, all) = call(&store, get_req("/companies/42/chain?status=all")).await;
         assert_eq!(all["suppliers"].as_array().unwrap().len(), 1);
         assert_eq!(call(&store, get_req("/companies/42/chain?status=maybe")).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn analysis_lists_findings_and_what_was_not_checked() {
+        let (store, _, _) = seeded();
+        let (status, body) = call(&store, get_req("/companies/42/analysis")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["company"], "Nordvik Test Components Inc.");
+        assert_eq!((body["customers"].as_u64(), body["suppliers"].as_u64(), body["pending"].as_u64()), (Some(1), Some(1), Some(1)));
+        let findings = body["findings"].as_array().unwrap();
+        assert!(findings.iter().any(|f| f["area"] == "Underlag" && f["level"] == "watch"));
+        assert!(findings.iter().any(|f| f["area"] == "Sanktioner" && f["text"].as_str().unwrap().contains("inte hämtad")));
     }
 
     #[tokio::test]

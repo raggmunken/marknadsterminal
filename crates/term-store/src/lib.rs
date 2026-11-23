@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use term_core::names::normalize_name;
 use term_core::{
-    Amount, Cik, Company, Confidence, Counterparty, Direction, Event, Evidence, LogRecord, Period,
+    Amount, Cik, Company, Confidence, Counterparty, Direction, Event, Evidence, Location, LogRecord, Period,
     Relation, ReviewStatus, SanctionEntry, SeriesPoint, StoredRelation, Unit,
 };
 
@@ -98,6 +98,18 @@ CREATE TABLE IF NOT EXISTS sanction (
     PRIMARY KEY (source, list_id)
 );
 CREATE INDEX IF NOT EXISTS sanction_name ON sanction(name_key);
+
+CREATE TABLE IF NOT EXISTS location (
+    source      TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    owner       TEXT NOT NULL,
+    owner_key   TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    PRIMARY KEY (source, external_id)
+);
+CREATE INDEX IF NOT EXISTS location_owner ON location(owner_key);
 
 CREATE TABLE IF NOT EXISTS signal_log (
     seq        INTEGER PRIMARY KEY,
@@ -429,6 +441,11 @@ impl Store {
         Ok(new)
     }
 
+    pub fn event_count(&self) -> Result<u64> {
+        let n: i64 = self.conn().query_row("SELECT count(*) FROM event", [], |r| r.get(0))?;
+        Ok(n as u64)
+    }
+
     /// Newest first.
     pub fn events(&self, limit: u32) -> Result<Vec<Event>> {
         let conn = self.conn();
@@ -552,6 +569,51 @@ impl Store {
                 name: r.get(1)?,
                 kind: r.get(2)?,
                 program: r.get(3)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    // ----- locations -----
+
+    pub fn upsert_locations(&self, locations: &[Location]) -> Result<usize> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO location (source, external_id, owner, owner_key, label, lat, lon)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(source, external_id) DO UPDATE SET owner = excluded.owner,
+                    owner_key = excluded.owner_key, label = excluded.label, lat = excluded.lat, lon = excluded.lon",
+            )?;
+            for l in locations {
+                stmt.execute(params![l.source, l.external_id, l.owner, normalize_name(&l.owner), l.label, l.lat, l.lon])?;
+            }
+        }
+        tx.commit()?;
+        Ok(locations.len())
+    }
+
+    /// Places that belong to the named company. `None` returns all.
+    pub fn locations(&self, owner: Option<&str>) -> Result<Vec<Location>> {
+        let conn = self.conn();
+        let key = owner.map(normalize_name);
+        let mut stmt = conn.prepare(
+            "SELECT owner, label, lat, lon, source, external_id FROM location
+             WHERE ?1 IS NULL OR owner_key = ?1 ORDER BY owner, label, external_id",
+        )?;
+        let rows = stmt.query_map(params![key], |r| {
+            Ok(Location {
+                owner: r.get(0)?,
+                label: r.get(1)?,
+                lat: r.get(2)?,
+                lon: r.get(3)?,
+                source: r.get(4)?,
+                external_id: r.get(5)?,
             })
         })?;
         let mut out = Vec::new();
@@ -709,6 +771,7 @@ fn parse_direction(s: &str) -> Result<Direction> {
 fn confidence_str(c: Confidence) -> &'static str {
     match c {
         Confidence::Disclosed => "disclosed",
+        Confidence::Registry => "registry",
         Confidence::Named => "named",
         Confidence::Reverse => "reverse",
     }
@@ -717,6 +780,7 @@ fn confidence_str(c: Confidence) -> &'static str {
 fn parse_confidence(s: &str) -> Result<Confidence> {
     match s {
         "disclosed" => Ok(Confidence::Disclosed),
+        "registry" => Ok(Confidence::Registry),
         "named" => Ok(Confidence::Named),
         "reverse" => Ok(Confidence::Reverse),
         other => Err(StoreError::Corrupt(format!("confidence {other:?}"))),
@@ -915,6 +979,7 @@ mod tests {
             .unwrap();
         assert_eq!(known, 1000);
         assert_eq!(store.events(1).unwrap().len(), 1);
+        assert_eq!(store.event_count().unwrap(), 3);
     }
 
     #[test]
@@ -942,6 +1007,26 @@ mod tests {
         store.replace_sanctions("ofac", &[entry(1, "ANGLO-CARIBBEAN CO., LTD.")]).unwrap();
         assert_eq!(store.sanction_count().unwrap(), 1);
         assert!(store.sanction_matches("Old Entry").unwrap().is_empty(), "delisted names disappear");
+    }
+
+    #[test]
+    fn locations_are_found_by_owner_whatever_the_suffix() {
+        let store = Store::open_in_memory().unwrap();
+        let place = |id: &str, owner: &str, lat| Location {
+            owner: owner.into(),
+            label: format!("plant {id}"),
+            lat,
+            lon: 10.0,
+            source: "manual".into(),
+            external_id: id.into(),
+        };
+        store.upsert_locations(&[place("a", "Polarvik Castings Ltd", 1.0), place("b", "Other Works Inc", 2.0)]).unwrap();
+        assert_eq!(store.locations(Some("POLARVIK CASTINGS LIMITED")).unwrap().len(), 1);
+        assert_eq!(store.locations(None).unwrap().len(), 2);
+        // The same register row again replaces, it does not duplicate.
+        store.upsert_locations(&[place("a", "Polarvik Castings Ltd", 5.0)]).unwrap();
+        let again = store.locations(Some("Polarvik Castings")).unwrap();
+        assert_eq!((again.len(), again[0].lat), (1, 5.0));
     }
 
     #[test]

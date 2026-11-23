@@ -85,15 +85,16 @@
     - term series fetch fred DGS10 sparar en serie
     - ett riktigt svar ligger i fixtures/kallor/ och tolken testas mot det
 
-- uppgift: kallor/resten-av-de-fria
+- uppgift: kallor/med-nyckel
   vem: agent
-  mål: De gratis källor som inte är inlagda
+  mål: Källorna som kräver gratis nyckel
+  kräver: nycklar i .env på en maskin där agenten får köra
   klart_när:
-    - USAspending, EPA FRS, Census, UN Comtrade, NASA FIRMS, EIA och aisstream.io har var sin modul
+    - Census, UN Comtrade, NASA FIRMS, EIA och aisstream.io har var sin modul
     - varje modul har en inspelad riktig testfil och är körd skarpt
   berör: crates/term-sources
 
 - uppgift: kallor/anlaggningar
   vem: agent
-  mål: Händelser kopplas till bolag
-  not: Kräver var anläggningar ligger. Kandidater i planen är EPA FRS och Open Supply Hub. Open Supply Hub väntar på juristens svar om licensen.
+  mål: Platslistan blir pålitlig
+  not: EPA FRS är inlagd men söker på namn och täcker bara USA. Någon måste rensa fel träffar per bolag. Open Supply Hub väntar på juristens svar om licensen.

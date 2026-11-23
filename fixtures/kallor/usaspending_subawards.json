@@ -1,0 +1,51 @@
+{
+ "spending_level": "subawards",
+ "limit": 3,
+ "results": [
+  {
+   "internal_id": "4203138587",
+   "prime_award_internal_id": 298553530,
+   "Sub-Award ID": "4203138587",
+   "Sub-Awardee Name": "LOCKHEED MARTIN CORPORATION",
+   "Sub-Award Date": "2025-10-07",
+   "Sub-Award Amount": 168638833.0,
+   "Prime Recipient Name": "RAYTHEON COMPANY",
+   "Prime Award ID": "FA861124CB001",
+   "Sub-Award Description": "PRECISION MACHINED,OPTICAL ASSEMBLIES,OTHER TEST EQUIP,TEST EQUIPMENT,PEDEST&GIMBALPLATFRM,GROUND SUPPORT EQUIP.",
+   "prime_award_generated_internal_id": "CONT_AWD_FA861124CB001_9700_-NONE-_-NONE-"
+  },
+  {
+   "internal_id": "5300174687",
+   "prime_award_internal_id": 357791402,
+   "Sub-Award ID": "5300174687",
+   "Sub-Awardee Name": "LOCKHEED MARTIN CORPORATION",
+   "Sub-Award Date": "2026-03-06",
+   "Sub-Award Amount": 145148167.0,
+   "Prime Recipient Name": "NORTHROP GRUMMAN SYSTEMS CORPORATION",
+   "Prime Award ID": "N0038326FS50R",
+   "Sub-Award Description": "SEARCH, DETECTION, NAVIGATION, GUIDANCE, AERONAUTICAL, AND NAUTICAL SYSTEM AND INSTRUMENT MANUFACTURING",
+   "prime_award_generated_internal_id": "CONT_AWD_N0038326FS50R_9700_N0038322GS501_9700"
+  },
+  {
+   "internal_id": "5300109018 CO 61",
+   "prime_award_internal_id": 353168602,
+   "Sub-Award ID": "5300109018 CO 61",
+   "Sub-Awardee Name": "LOCKHEED MARTIN CORPORATION",
+   "Sub-Award Date": "2026-01-12",
+   "Sub-Award Amount": 72342317.42,
+   "Prime Recipient Name": "NORTHROP GRUMMAN SYSTEMS CORPORATION",
+   "Prime Award ID": "N0038325FS523",
+   "Sub-Award Description": "SEARCH, DETECTION, NAVIGATION, GUIDANCE, AERONAUTICAL, AND NAUTICAL SYSTEM AND INSTRUMENT MANUFACTURING",
+   "prime_award_generated_internal_id": "CONT_AWD_N0038325FS523_9700_N0038322GS501_9700"
+  }
+ ],
+ "page_metadata": {
+  "page": 1,
+  "hasNext": true,
+  "last_record_unique_id": "353168602",
+  "last_record_sort_value": "7234231742"
+ },
+ "messages": [
+  "For searches, time period start and end dates are currently limited to an earliest date of 2007-10-01.  For data going back to 2000-10-01, use either the Custom Award Download feature on the website or one of our download or bulk_download API endpoints as listed on https://api.usaspending.gov/docs/endpoints. "
+ ]
+}

@@ -94,12 +94,15 @@ pub enum Direction {
 /// The plan names the three levels. Their exact meaning here is the
 /// prototype's reading of the plan and is open for review:
 /// * `Disclosed`: the subject's own filing names the counterparty and gives an amount.
+/// * `Registry`: a public register states the relation, for example a
+///   federal subcontract. Hard evidence, but not the company's own words.
 /// * `Named`: the subject's own filing names the counterparty without an amount.
 /// * `Reverse`: the relation was found in the counterparty's filing (step 6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Confidence {
     Disclosed,
+    Registry,
     Named,
     Reverse,
 }
@@ -218,6 +221,20 @@ pub struct Event {
     pub alert: Option<String>,
     pub country: Option<String>,
     pub url: Option<String>,
+}
+
+/// A place tied to a company: a plant, a warehouse, a head office.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Location {
+    /// The company the place belongs to, as a name.
+    pub owner: String,
+    pub label: String,
+    pub lat: f64,
+    pub lon: f64,
+    /// `manual` or the register it came from, for example `epa-frs`.
+    pub source: String,
+    /// The register's own identifier. Unique together with `source`.
+    pub external_id: String,
 }
 
 /// One observation in a time series. `date` is as the source gives it:

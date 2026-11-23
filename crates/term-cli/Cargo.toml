@@ -9,6 +9,7 @@ name = "term"
 path = "src/main.rs"
 
 [dependencies]
+term-analysis.workspace = true
 term-core.workspace = true
 term-ingest.workspace = true
 term-parse.workspace = true

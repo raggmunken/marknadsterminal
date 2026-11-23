@@ -9,8 +9,10 @@ Kedjemotorn är körd på ett påhittat testdokument, inte på riktiga
 
 ![Fönstret med kedja, belägg och händelser](docs/skarmbild.jpg)
 
-Bilden är det riktiga programmet, startat på en virtuell skärm. Kedjan är
-det påhittade testbolaget. Händelserna till höger är riktiga, hämtade från USGS.
+Bilden är det riktiga programmet, startat på en virtuell skärm, med riktiga
+uppgifter ur offentliga register hämtade 2026-11-23: Lockheed Martins
+kunder enligt federala underkontrakt hos USAspending, anläggningar från EPA,
+jordbävningar från USGS och OFAC:s sanktionslista.
 Ny bild tas med `scripts/skarmbild.sh`.
 
 ## Flödet
@@ -34,9 +36,10 @@ dokument -> text -> stycken -> extraktion -> citatkontroll -> bolagsmatchning
 | `term-resolve` | Bolagsmatchning, spegling, sammanslagning | Testat på påhittade bolag |
 | `term-store` | Lagring i en SQLite-fil | Testat, även mot fil på disk |
 | `term-api` | HTTP-gränssnitt | Testat, och kört som server på localhost |
-| `term-sources` | Tio gratis källor utöver EDGAR | Nio körda skarpt 2026-11-23. FRED väntar på nyckel |
+| `term-sources` | Tolv gratis källor utöver EDGAR | Elva körda skarpt 2026-11-23. FRED väntar på nyckel |
+| `term-analysis` | Väger ihop kedja, granskning, sanktioner, platser och händelser | Testat, och kört på riktiga registerdata |
 | `term-signal` | Signalkort, låst logg, fyra grindar, statistik | Testat. Innehåller ingen regel som ger signaler |
-| `term-ui` | Fönstret: KEDJA, BEVIS, GRANSKA, HÄNDELSER | Testat utan fönster och startat på virtuell skärm för bilden ovan. Ingen har klickat i det |
+| `term-ui` | Fönstret: KEDJA, ANALYS, BEVIS, GRANSKA, HÄNDELSER, SERIER | Testat utan fönster och startat på virtuell skärm för bilden ovan. Ingen har klickat i det |
 | `term-cli` | Kommandot `term` | Kört från början till slut |
 
 ## Kom igång
@@ -79,7 +82,7 @@ Inget i det här blocket har körts.
 
 ## Gratis källor
 
-Nio källor kräver ingen nyckel och är körda skarpt. Tolkarna testas mot
+Elva källor kräver ingen nyckel och är körda skarpt. Tolkarna testas mot
 inspelade riktiga svar i `fixtures/kallor/`.
 
 | Källa | Ger | Kommando | Läge |
@@ -93,6 +96,8 @@ inspelade riktiga svar i `fixtures/kallor/`.
 | Världsbanken | Årliga makroserier per land | `term series fetch worldbank NY.GDP.MKTP.CD --country SE` | Körd skarpt |
 | filings.xbrl.org | Europeiska årsredovisningar (ESEF) | `term esef SE` | Körd skarpt |
 | OFAC | Sanktionslistan SDN | `term sanctions fetch`, `check`, `screen` | Körd skarpt |
+| EPA FRS | Var anläggningar i USA ligger | `term locations fetch-epa LMT --search "LOCKHEED MARTIN" --state TX` | Körd skarpt |
+| USAspending | Federala underkontrakt. Huvudleverantören blir kund | `term subawards LMT` | Körd skarpt |
 | FRED | Amerikanska räntor och makro | `term series fetch fred DGS10` | Inte körd. Kräver gratis nyckel |
 
 ```sh
@@ -105,13 +110,35 @@ Två varningar:
 
 - **Sanktionskollen är ingen regelefterlevnadskontroll.** Bara huvudnamn jämförs,
   inte alias. Ingen träff bevisar ingenting.
-- **Händelserna är inte kopplade till kedjorna.** Det kräver var bolagens
-  anläggningar ligger, och den datan finns inte i projektet än.
+- **Platslistan är en startlista.** EPA söker på anläggningens namn, täcker
+  bara USA och ger både missar och fel träffar. Ingen händelse nära en känd
+  plats betyder inte att kedjan är oberörd.
 
-Gratis källor i planen som INTE är inlagda: GDELT (svarade inte härifrån),
-USAspending, EPA FRS, Census, UN Comtrade, NASA FIRMS, aisstream.io, EIA,
-EDINET, Open DART och SEC:s dataset för ägare, insiders och räkenskaper.
+Gratis källor i planen som INTE är inlagda, och varför:
+
+- **Kräver nyckel som inte fanns:** Census, UN Comtrade, NASA FIRMS, EIA,
+  aisstream.io, EDINET och Open DART. De ska byggas mot inspelade riktiga svar.
+- **Kräver er kontaktadress:** SEC:s dataset för räkenskaper, ägare och insiders.
+- **Släppte inte igenom oss:** GDELT begränsar anrop per adress och svarade 429.
 Open Supply Hub och OpenSky väntar på licensfrågorna i planens juristlista.
+
+## Analysen
+
+`term analyze LMT`, vyn ANALYS och `GET /companies/{cik}/analysis` väger ihop
+allt som är känt om ett bolag:
+
+| Område | Vad som vägs in | Larm när |
+|---|---|---|
+| Underlag | Hur mycket som är granskat av en människa | Relationer väntar på granskning |
+| Koncentration | Redovisade kundandelar, och registerbelopp | En kund når 10 eller 20 procent |
+| Enda källa | Citatet bakom varje leverantör | Bolaget själv skriver "sole source" |
+| Sanktioner | Motparternas namn mot OFAC:s lista | Ett huvudnamn stämmer |
+| Händelser | Jordbävningar och larm mot kända platser | En händelse ligger inom en avståndsgräns |
+
+Varje fynd säger vad det vilar på. Analysen säger också vad den INTE kunde
+kontrollera, så att ett uteblivet larm inte läses som ett friande.
+Avståndsgränserna och andelströsklarna är tumregler, inte forskning.
+Analysen beskriver exponering. Den säger inte vad någon bör köpa eller sälja.
 
 ## Regler i koden
 
@@ -134,8 +161,8 @@ Open Supply Hub och OpenSky väntar på licensfrågorna i planens juristlista.
 
 - Ingen regel som ger signaler. De tre signaltyperna kräver kurshistorik,
   estimat och händelsedata som projektet inte har.
-- Ingen kursdata, inga flöden och ingen prognosmodell. Händelser hämtas men
-  är inte kopplade till anläggningar. Det är planens del 2 och större delen av del 3.
+- Ingen kursdata, inga handelsflöden och ingen prognosmodell. Det är planens
+  del 2 och större delen av del 3.
 - Ingen inloggning i API:et. Det lyssnar på localhost.
 - Vyerna FILINGS, PEERS, FIN, AGARE, INSIDER, LEDNING, KARTA och KURS, och alla vyer i del 2 utom HÄNDELSER.
 

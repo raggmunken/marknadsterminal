@@ -5,6 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+term-analysis.workspace = true
 term-core.workspace = true
 term-store.workspace = true
 eframe.workspace = true

@@ -9,6 +9,7 @@ members = [
     "crates/term-store",
     "crates/term-signal",
     "crates/term-sources",
+    "crates/term-analysis",
     "crates/term-api",
     "crates/term-ui",
     "crates/term-cli",
@@ -24,6 +25,7 @@ default-members = [
     "crates/term-store",
     "crates/term-signal",
     "crates/term-sources",
+    "crates/term-analysis",
     "crates/term-api",
     "crates/term-cli",
 ]
@@ -43,6 +45,7 @@ term-store = { path = "crates/term-store" }
 term-signal = { path = "crates/term-signal" }
 term-api = { path = "crates/term-api" }
 term-sources = { path = "crates/term-sources" }
+term-analysis = { path = "crates/term-analysis" }
 
 anyhow = "1"
 csv = "1"

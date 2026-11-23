@@ -173,8 +173,9 @@ pub fn mirror(relation: &Relation, subject_name: &str) -> Option<Relation> {
 fn rank(confidence: Confidence) -> u8 {
     match confidence {
         Confidence::Disclosed => 0,
-        Confidence::Named => 1,
-        Confidence::Reverse => 2,
+        Confidence::Registry => 1,
+        Confidence::Named => 2,
+        Confidence::Reverse => 3,
     }
 }
 

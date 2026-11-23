@@ -3847,12 +3847,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "term-analysis"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "term-core",
+ "term-store",
+]
+
+[[package]]
 name = "term-api"
 version = "0.0.1"
 dependencies = [
  "axum",
  "serde",
  "serde_json",
+ "term-analysis",
  "term-core",
  "term-store",
  "tokio",
@@ -3867,6 +3877,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "serde_json",
+ "term-analysis",
  "term-api",
  "term-core",
  "term-extract",
@@ -3970,6 +3981,7 @@ version = "0.0.1"
 dependencies = [
  "eframe",
  "egui_dock",
+ "term-analysis",
  "term-core",
  "term-store",
 ]

@@ -75,8 +75,11 @@ pub fn annual(json: &str, tag: &str) -> Result<Vec<SeriesPoint>, IngestError> {
     Ok(best.into_iter().map(|(date, (_, _, value))| SeriesPoint { date, value }).collect())
 }
 
-/// Every line in [`LINES`] that the company reports, as (label, tag used, values).
-pub fn statement(json: &str) -> Result<Vec<(&'static str, &'static str, Vec<SeriesPoint>)>, IngestError> {
+/// One line of the statement: label, the tag it was read from, and the values.
+pub type Line = (&'static str, &'static str, Vec<SeriesPoint>);
+
+/// Every line in [`LINES`] that the company reports.
+pub fn statement(json: &str) -> Result<Vec<Line>, IngestError> {
     let mut out = Vec::new();
     for (label, tags) in LINES {
         for tag in *tags {

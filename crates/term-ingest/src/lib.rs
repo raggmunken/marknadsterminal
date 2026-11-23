@@ -1,8 +1,7 @@
 //! Chain engine step 1: find and fetch documents from SEC EDGAR.
 //!
-//! STATUS: the rate limiter, the URL builders and the parsing of the
-//! submissions index are unit tested. [`EdgarClient`] has not been run
-//! against EDGAR from this code yet.
+//! STATUS: run live against EDGAR on 2026-11-23: the company list, the
+//! submissions index, a full annual report and the full text search.
 
 pub mod limiter;
 pub mod search;
@@ -129,14 +128,23 @@ impl EdgarClient {
     }
 
     pub async fn get_text(&self, url: &str) -> Result<String, IngestError> {
-        self.limiter.acquire().await;
-        let response =
-            self.http.get(url).send().await.map_err(|e| IngestError::Http(e.to_string()))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(IngestError::Status { url: url.to_string(), status: status.as_u16() });
+        // EDGAR now and then answers 500 on a request that works a moment later.
+        // One retry after a pause, never more, and never on a refusal (4xx).
+        for attempt in 0..2 {
+            self.limiter.acquire().await;
+            let response =
+                self.http.get(url).send().await.map_err(|e| IngestError::Http(e.to_string()))?;
+            let status = response.status();
+            if status.is_server_error() && attempt == 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                continue;
+            }
+            if !status.is_success() {
+                return Err(IngestError::Status { url: url.to_string(), status: status.as_u16() });
+            }
+            return response.text().await.map_err(|e| IngestError::Http(e.to_string()));
         }
-        response.text().await.map_err(|e| IngestError::Http(e.to_string()))
+        unreachable!("the loop returns on its second pass")
     }
 
     pub async fn filings(&self, cik: Cik) -> Result<Vec<Filing>, IngestError> {

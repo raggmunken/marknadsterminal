@@ -18,7 +18,7 @@ const NAME: &str =
 
 static CUSTOMER_SHARE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"(?P<name>{NAME}),? (?:accounted for|represented|comprised) (?:approximately |about |roughly )?(?P<pct>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent) of (?:our |the Company's )?(?P<basis>(?:total |consolidated |net )*(?:sales|revenues?|accounts receivable|trade receivables))"
+        r"(?P<name>{NAME})(?:, [^,.;]{{3,140}},)?,? (?:accounted for|represented|comprised) (?:approximately |about |roughly )?(?P<pct>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent) of (?:our |the Company's )?(?P<basis>(?:total |consolidated |net )*(?:sales|revenues?|accounts receivable|trade receivables))"
     ))
     .expect("customer pattern compiles")
 });
@@ -117,7 +117,9 @@ impl Extractor for BaselineExtractor {
 
 fn clean_name(raw: &str) -> Option<String> {
     let name = raw.trim().trim_end_matches([',', '.']).trim();
-    if name.chars().count() < 3 {
+    // Two letters are accepted only as an abbreviation in capitals, such as "GM".
+    let abbreviation = name.len() == 2 && name.bytes().all(|b| b.is_ascii_uppercase());
+    if name.chars().count() < 3 && !abbreviation {
         return None;
     }
     if NOT_A_NAME.contains(&name.to_lowercase().as_str()) || ANONYMOUS.is_match(name) {
@@ -167,6 +169,24 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].counterparty, "Brightline Retail Group");
         assert_eq!(found[0].amount.as_ref().unwrap().value, 12.5);
+    }
+
+    /// Sentences as they stand in annual reports filed with the SEC in 2026.
+    #[test]
+    fn real_phrasings_from_filed_reports() {
+        // Lear Corp: the name is followed by a description before the verb.
+        let lear = run("In 2025, General Motors, one of the largest automotive and light truck manufacturers in the world, accounted for 22% of our net sales.");
+        assert_eq!(lear.len(), 1, "{lear:?}");
+        assert_eq!(lear[0].counterparty, "General Motors");
+        assert_eq!(lear[0].amount.as_ref().unwrap().value, 22.0);
+        assert_eq!(lear[0].fiscal_year, Some(2025));
+
+        // Aspen Aerogels: the customer is written as an abbreviation.
+        let aspen = run("GM represented 59% of our total revenue in 2025 and was our only customer representing 10% or more of our revenue for that period.");
+        assert_eq!(aspen.len(), 1, "{aspen:?}");
+        assert_eq!(aspen[0].counterparty, "GM");
+        assert_eq!(aspen[0].amount.as_ref().unwrap().value, 59.0);
+        assert_eq!(aspen[0].amount.as_ref().unwrap().basis.as_deref(), Some("total revenue"));
     }
 
     #[test]

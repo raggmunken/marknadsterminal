@@ -1,11 +1,10 @@
 //! Chain engine step 6: reverse search. "Who else mentions this company?"
 //!
-//! STATUS: UNVERIFIED. EDGAR full text search has no published contract.
-//! The address and the response shape below are written from how the
-//! search page is known to behave and have never been checked against a
-//! live answer from this code. The parser accepts missing fields for that
-//! reason. The first live run must save a real response as a test file.
-//! The search covers filings from 2001 onwards.
+//! STATUS: run live 2026-11-23, and tested against a recorded real answer
+//! in `fixtures/kallor/edgar_full_text_search.json`. EDGAR full text
+//! search has no published contract, so the shape can change without
+//! notice. The parser accepts missing fields for that reason. The search
+//! covers filings from 2001 onwards.
 
 use crate::{EdgarClient, IngestError};
 use serde::Deserialize;
@@ -23,16 +22,27 @@ pub struct SearchHit {
     pub accession: Option<String>,
 }
 
-/// Address for an exact phrase search, limited to the given form types.
-pub fn full_text_url(phrase: &str, forms: &[&str]) -> Result<String, IngestError> {
-    let phrase = phrase.trim().replace('"', " ");
-    if phrase.is_empty() {
+/// Address for a search where every phrase must occur exactly, limited to
+/// the given form types.
+/// `dates` limits the filing date to a range, both ends as YYYY-MM-DD.
+pub fn full_text_url(phrases: &[&str], forms: &[&str], dates: Option<(&str, &str)>) -> Result<String, IngestError> {
+    let quoted: Vec<String> = phrases
+        .iter()
+        .map(|p| p.trim().replace('"', " "))
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| format!("\"{}\"", p.trim()))
+        .collect();
+    if quoted.is_empty() {
         return Err(IngestError::Format("empty search phrase".into()));
     }
-    let quoted = format!("\"{phrase}\"");
-    let mut params = vec![("q", quoted)];
+    let mut params = vec![("q", quoted.join(" "))];
     if !forms.is_empty() {
         params.push(("forms", forms.join(",")));
+    }
+    if let Some((from, to)) = dates {
+        params.push(("dateRange", "custom".to_string()));
+        params.push(("startdt", from.to_string()));
+        params.push(("enddt", to.to_string()));
     }
     reqwest::Url::parse_with_params(FULL_TEXT_ENDPOINT, &params)
         .map(String::from)
@@ -97,8 +107,13 @@ pub fn mentioning_companies(hits: &[SearchHit], exclude: Cik) -> Vec<Cik> {
 }
 
 impl EdgarClient {
-    pub async fn full_text_search(&self, phrase: &str, forms: &[&str]) -> Result<Vec<SearchHit>, IngestError> {
-        parse_full_text(&self.get_text(&full_text_url(phrase, forms)?).await?)
+    pub async fn full_text_search(
+        &self,
+        phrases: &[&str],
+        forms: &[&str],
+        dates: Option<(&str, &str)>,
+    ) -> Result<Vec<SearchHit>, IngestError> {
+        parse_full_text(&self.get_text(&full_text_url(phrases, forms, dates)?).await?)
     }
 }
 
@@ -122,18 +137,21 @@ mod tests {
 
     #[test]
     fn url_quotes_the_phrase_and_lists_forms() {
-        let url = full_text_url("Nordvik Test Components", &["10-K", "20-F"]).unwrap();
+        let url = full_text_url(&["Nordvik Test Components"], &["10-K", "20-F"], None).unwrap();
         assert_eq!(
             url,
             "https://efts.sec.gov/LATEST/search-index?q=%22Nordvik+Test+Components%22&forms=10-K%2C20-F"
         );
-        assert!(full_text_url("AT&T Inc", &[]).unwrap().ends_with("?q=%22AT%26T+Inc%22"));
-        assert!(full_text_url("  ", &[]).is_err());
+        assert!(full_text_url(&["AT&T Inc"], &[], None).unwrap().ends_with("?q=%22AT%26T+Inc%22"));
+        assert!(full_text_url(&["General Motors", "accounted for"], &[], Some(("2025-01-01", "2026-11-23")))
+            .unwrap()
+            .ends_with("?q=%22General+Motors%22+%22accounted+for%22&dateRange=custom&startdt=2025-01-01&enddt=2026-11-23"));
+        assert!(full_text_url(&["  "], &[], None).is_err());
     }
 
     #[test]
     fn embedded_quotes_cannot_break_out_of_the_phrase() {
-        let url = full_text_url("Acme\" OR \"Other", &[]).unwrap();
+        let url = full_text_url(&["Acme\" OR \"Other"], &[], None).unwrap();
         assert_eq!(url.matches("%22").count(), 2);
     }
 
@@ -147,6 +165,23 @@ mod tests {
         assert_eq!(hits[1].ciks, vec![Cik::new(42).unwrap()]);
         assert!(hits[2].ciks.is_empty());
         assert!(parse_full_text("{}").is_err());
+    }
+
+    #[test]
+    fn reads_a_recorded_real_answer() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/kallor/edgar_full_text_search.json");
+        let hits = parse_full_text(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(hits.len(), 3);
+        assert_eq!(hits[0].ciks, vec![Cik::new(804_269).unwrap()]);
+        assert_eq!(hits[0].form.as_deref(), Some("10-K"));
+        assert_eq!(hits[0].file_date.as_deref(), Some("2026-01-27"));
+        assert_eq!(hits[0].accession.as_deref(), Some("0000804269-26-000008"));
+        assert!(hits[0].display_names[0].starts_with("General Motors Financial Company"));
+        // GM itself is in the answer and must be left out of the list of others.
+        let others = mentioning_companies(&hits, Cik::new(1_467_858).unwrap());
+        assert!(!others.contains(&Cik::new(1_467_858).unwrap()));
+        assert!(others.contains(&Cik::new(804_269).unwrap()));
     }
 
     #[test]

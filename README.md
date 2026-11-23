@@ -4,8 +4,19 @@ Kod till projektplanen "Egen marknadsterminal i Rust". Det här är kedjemotorn
 från dokument till granskad relation, med lagring, API, gränssnitt, gratis
 datakällor och grunden för signalmotorn.
 
-Kedjemotorn är körd på ett påhittat testdokument, inte på riktiga
-årsredovisningar. De gratis källorna i `term-sources` är körda skarpt.
+Kedjemotorn är körd skarpt mot SEC EDGAR med den regelbaserade extraktorn.
+Språkmodellen är fortfarande inte körd. De gratis källorna i `term-sources`
+är körda skarpt.
+
+### Första körningen på riktiga årsredovisningar, 2026-11-23
+
+- GM:s egen årsredovisning namnger inga kunder eller leverantörer. Kedjan måste
+  byggas från andra hållet.
+- Fulltextsökningen fann 86 bolag som nämner General Motors ihop med "accounted for".
+- Av 23 lästa årsredovisningar gav den regelbaserade extraktorn två leverantörer
+  till GM, med ordagranna citat: Lear Corp och PAMT Corp.
+- Extraktorn missar det mesta som inte följer ett fast mönster, till exempel
+  "GM and Distribution represented 59% and 9%". Det är det språkmodellen ska lösa.
 
 ![Fönstret med kedja, belägg och händelser](docs/skarmbild.jpg)
 
@@ -30,9 +41,9 @@ dokument -> text -> stycken -> extraktion -> citatkontroll -> bolagsmatchning
 | Paket | Ansvar | Läge |
 |---|---|---|
 | `term-core` | Gemensamma typer | Testat |
-| `term-ingest` | EDGAR-klient, takthållare, fulltextsökning | Takthållare och tolkning testade. Aldrig körd mot EDGAR. Sökningens svarsformat är ett antagande |
-| `term-parse` | HTML till text, urval av stycken | Testat på påhittad text |
-| `term-extract` | Extraktion, citatkontroll, facit och mått | Regelbaserad extraktor körd. Språkmodellen skriven, aldrig körd skarpt |
+| `term-ingest` | EDGAR-klient, takthållare, fulltextsökning | Körd skarpt mot EDGAR 2026-11-23. Sökningen testas mot ett inspelat riktigt svar |
+| `term-parse` | HTML till text, urval av stycken | Körd på 24 riktiga årsredovisningar. Inte stickprovskontrollerad mot originalen |
+| `term-extract` | Extraktion, citatkontroll, facit och mått | Regelbaserad extraktor körd på riktiga dokument. Språkmodellen skriven, aldrig körd skarpt |
 | `term-resolve` | Bolagsmatchning, spegling, sammanslagning | Testat på påhittade bolag |
 | `term-store` | Lagring i en SQLite-fil | Testat, även mot fil på disk |
 | `term-api` | HTTP-gränssnitt | Testat, och kört som server på localhost |
@@ -74,11 +85,29 @@ cargo run -p term-cli -- companies import company_tickers.json
 cargo run -p term-cli -- fetch 1467858 --out gm_10k.htm
 cargo run -p term-cli -- ingest gm_10k.htm --cik 1467858 --extractor anthropic
 
-# Vilka andra bolag nämner bolaget?
-cargo run -p term-cli -- reverse 1467858
+# Vilka bolag uppger bolaget som kund? Läs in tio av deras årsredovisningar.
+cargo run -p term-cli -- reverse GM --ingest 10
 ```
 
-Inget i det här blocket har körts.
+Allt i blocket är kört utom raden med `--extractor anthropic`.
+
+## Fler källor värda att ta in
+
+Funna vid en genomgång 2026-11-23. Ingen av dem är inlagd.
+
+| Källa | Ger | Varför |
+|---|---|---|
+| SEC `companyfacts` och `frames` | Räkenskaper per bolag och per begrepp | Fyller vyn FIN. Ingen nyckel, samma kontaktadress |
+| SEC blankett 4, 13F, 13D och 13G | Insiders och ägare | Fyller vyerna INSIDER och AGARE |
+| SEC blankett 8-K | Väsentliga händelser | Utlösare för kundchocken |
+| Utskrifter från rapportsamtal | Kunder och leverantörer som nämns muntligt | En MIT-studie byggde kedjor ur 10-K och rapportsamtal |
+| AKShare | Kinesiska marknadsdata | Planens öppna lucka för Kina |
+| FINRA blankningsvolym | Daglig blankning per aktie | Gratis signalunderlag |
+
+Öppen kod att läsa, inte kopiera: `finagg` (samlar gratis finans-API:er i SQL),
+`awesome-quant` och `awesome-data` (listor över källor), och datamängden
+IC-SPLC för halvledarkedjor, som är anonymiserad och därför mest ett mått att
+jämföra mot.
 
 ## Gratis källor
 

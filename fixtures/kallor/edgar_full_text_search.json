@@ -1,0 +1,216 @@
+{
+ "took": 700,
+ "timed_out": false,
+ "_shards": {
+  "total": 50,
+  "successful": 50,
+  "skipped": 0,
+  "failed": 0
+ },
+ "hits": {
+  "total": {
+   "value": 110,
+   "relation": "eq"
+  },
+  "max_score": 15.161996,
+  "hits": [
+   {
+    "_index": "edgar_file",
+    "_id": "0000804269-26-000008:acf-20251231.htm",
+    "_score": 15.161996,
+    "_source": {
+     "ciks": [
+      "0000804269"
+     ],
+     "period_ending": "2025-12-31",
+     "file_num": [
+      "001-10667"
+     ],
+     "display_names": [
+      "General Motors Financial Company, Inc.  (CIK 0000804269)"
+     ],
+     "xsl": null,
+     "sequence": 1,
+     "root_forms": [
+      "10-K"
+     ],
+     "file_date": "2026-01-27",
+     "biz_states": [
+      "TX"
+     ],
+     "sics": [
+      "6199"
+     ],
+     "form": "10-K",
+     "adsh": "0000804269-26-000008",
+     "film_num": [
+      "26565620"
+     ],
+     "biz_locations": [
+      "Fort Worth, TX"
+     ],
+     "file_type": "10-K",
+     "file_description": "10-K",
+     "inc_states": [
+      "TX"
+     ],
+     "items": []
+    }
+   },
+   {
+    "_index": "edgar_file",
+    "_id": "0001467858-26-000013:gm-20251231.htm",
+    "_score": 13.267786,
+    "_source": {
+     "ciks": [
+      "0001467858"
+     ],
+     "period_ending": "2025-12-31",
+     "file_num": [
+      "001-34960"
+     ],
+     "display_names": [
+      "General Motors Co  (GM)  (CIK 0001467858)"
+     ],
+     "xsl": null,
+     "sequence": 1,
+     "root_forms": [
+      "10-K"
+     ],
+     "file_date": "2026-01-27",
+     "biz_states": [
+      "MI"
+     ],
+     "sics": [
+      "3711"
+     ],
+     "form": "10-K",
+     "adsh": "0001467858-26-000013",
+     "film_num": [
+      "26565511"
+     ],
+     "biz_locations": [
+      "Detroit, MI"
+     ],
+     "file_type": "10-K",
+     "file_description": "10-K",
+     "inc_states": [],
+     "items": []
+    }
+   },
+   {
+    "_index": "edgar_file",
+    "_id": "0001193125-26-119892:aspn-20251231.htm",
+    "_score": 11.190694,
+    "_source": {
+     "ciks": [
+      "0001145986"
+     ],
+     "period_ending": "2025-12-31",
+     "file_num": [
+      "001-36481"
+     ],
+     "display_names": [
+      "ASPEN AEROGELS INC  (ASPN)  (CIK 0001145986)"
+     ],
+     "xsl": null,
+     "sequence": 1,
+     "root_forms": [
+      "10-K"
+     ],
+     "file_date": "2026-03-23",
+     "biz_states": [
+      "MA"
+     ],
+     "sics": [
+      "5030"
+     ],
+     "form": "10-K/A",
+     "adsh": "0001193125-26-119892",
+     "film_num": [
+      "26783009"
+     ],
+     "biz_locations": [
+      "Northborough, MA"
+     ],
+     "file_type": "10-K/A",
+     "file_description": "10-K/A",
+     "inc_states": [
+      "DE"
+     ],
+     "items": []
+    }
+   }
+  ]
+ },
+ "query": {
+  "_source": {
+   "exclude": [
+    "doc_text"
+   ]
+  },
+  "query": {
+   "bool": {
+    "must": [
+     {
+      "match_phrase": {
+       "doc_text": "General Motors"
+      }
+     },
+     {
+      "match_phrase": {
+       "doc_text": "accounted for"
+      }
+     }
+    ],
+    "must_not": [],
+    "should": [],
+    "filter": [
+     {
+      "terms": {
+       "root_forms": [
+        "10-K"
+       ]
+      }
+     },
+     {
+      "range": {
+       "file_date": {
+        "gte": "2026-01-01",
+        "lte": "2026-11-23"
+       }
+      }
+     }
+    ]
+   }
+  },
+  "from": 0,
+  "size": 100,
+  "aggregations": {
+   "form_filter": {
+    "terms": {
+     "field": "root_forms",
+     "size": 30
+    }
+   },
+   "entity_filter": {
+    "terms": {
+     "field": "display_names.raw",
+     "size": 30
+    }
+   },
+   "sic_filter": {
+    "terms": {
+     "field": "sics",
+     "size": 30
+    }
+   },
+   "biz_states_filter": {
+    "terms": {
+     "field": "biz_states",
+     "size": 30
+    }
+   }
+  }
+ }
+}

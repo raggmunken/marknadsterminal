@@ -50,7 +50,6 @@ clap = { version = "4", features = ["derive"] }
 axum = "0.8"
 eframe = "0.36"
 egui_dock = "0.21"
-egui_graphs = "0.32"
 regex = "1"
 rusqlite = { version = "0.43", features = ["bundled"] }
 sha2 = "0.11"

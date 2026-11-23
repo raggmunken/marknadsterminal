@@ -7,6 +7,12 @@ datakällor och grunden för signalmotorn.
 Kedjemotorn är körd på ett påhittat testdokument, inte på riktiga
 årsredovisningar. De gratis källorna i `term-sources` är körda skarpt.
 
+![Fönstret med kedja, belägg och händelser](docs/skarmbild.jpg)
+
+Bilden är det riktiga programmet, startat på en virtuell skärm. Kedjan är
+det påhittade testbolaget. Händelserna till höger är riktiga, hämtade från USGS.
+Ny bild tas med `scripts/skarmbild.sh`.
+
 ## Flödet
 
 ```
@@ -30,7 +36,7 @@ dokument -> text -> stycken -> extraktion -> citatkontroll -> bolagsmatchning
 | `term-api` | HTTP-gränssnitt | Testat, och kört som server på localhost |
 | `term-sources` | Tio gratis källor utöver EDGAR | Nio körda skarpt 2026-11-23. FRED väntar på nyckel |
 | `term-signal` | Signalkort, låst logg, fyra grindar, statistik | Testat. Innehåller ingen regel som ger signaler |
-| `term-ui` | Fönstret: KEDJA, BEVIS, GRANSKA, HÄNDELSER | Testat utan fönster. Ingen har sett det |
+| `term-ui` | Fönstret: KEDJA, BEVIS, GRANSKA, HÄNDELSER | Testat utan fönster och startat på virtuell skärm för bilden ovan. Ingen har klickat i det |
 | `term-cli` | Kommandot `term` | Kört från början till slut |
 
 ## Kom igång
@@ -142,10 +148,12 @@ Open Supply Hub och OpenSky väntar på licensfrågorna i planens juristlista.
 - **Nivåerna Disclosed, Named och Reverse** har prototypens tolkning. Se `term-core`.
 - **Gränssnittet läser databasen direkt**, inte genom API:et. Det räcker för en
   användare på en dator.
+- **Kedjan ritas för hand, inte med `egui_graphs`.** På en riktig skärm blev
+  bibliotekets etiketter oläsliga. En fri grafvy för kedjor i flera led återstår.
 
 ## Versioner som måste hållas ihop
 
-`eframe` 0.36, `egui_dock` 0.21 och `egui_graphs` 0.32 kräver alla `egui` 0.36.
-Senaste `egui_dock` kräver redan 0.37. Uppgradera de tre tillsammans eller inte alls.
+`eframe` 0.36 och `egui_dock` 0.21 kräver båda `egui` 0.36. Senaste `egui_dock`
+kräver redan 0.37. Uppgradera dem tillsammans eller inte alls.
 
 Nästa uppgifter står i `uppgifter/nasta.yaml`.

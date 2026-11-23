@@ -9,4 +9,3 @@ term-core.workspace = true
 term-store.workspace = true
 eframe.workspace = true
 egui_dock.workspace = true
-egui_graphs.workspace = true

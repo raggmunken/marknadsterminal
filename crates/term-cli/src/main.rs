@@ -87,6 +87,8 @@ enum Command {
         /// Hämta och läs in årsredovisningen för så här många av dem
         #[arg(long, default_value_t = 0)]
         ingest: usize,
+        #[arg(long, value_enum, default_value_t = ExtractorKind::Baseline)]
+        extractor: ExtractorKind,
     },
     /// Följ kedjan nedåt: leverantörerna, deras leverantörer och så vidare. Kräver TERM_USER_AGENT
     Crawl {
@@ -100,6 +102,8 @@ enum Command {
         /// Hur många av bolagen som nämner ett bolag som läses per bolag
         #[arg(long, default_value_t = 60)]
         reverse_cap: usize,
+        #[arg(long, value_enum, default_value_t = ExtractorKind::Baseline)]
+        extractor: ExtractorKind,
     },
     /// Läs in en lista med namngivna leverantörer (till exempel ett pris från kunden). Ingen siffra, svagare än kedjan
     Named {
@@ -362,6 +366,8 @@ enum ExtractorKind {
     Baseline,
     /// Anthropic Messages API. Kräver ANTHROPIC_API_KEY
     Anthropic,
+    /// Programmet `claude` (Claude Code) i terminalen, standard Haiku 5.5. Ingen API-nyckel, men inloggad
+    ClaudeCli,
 }
 
 fn read_as_text(path: &Path) -> Result<String> {
@@ -386,6 +392,10 @@ async fn run_chain(
             let llm = AnthropicExtractor::from_env()?;
             chain::run(cik, text, source, &llm, min_score).await?
         }
+        ExtractorKind::ClaudeCli => {
+            let llm = term_extract::claude_cli::ClaudeCliExtractor::from_env();
+            chain::run(cik, text, source, &llm, min_score).await?
+        }
     })
 }
 
@@ -397,13 +407,13 @@ fn edgar_client() -> Result<EdgarClient> {
 }
 
 /// Read a company's own latest 10-K and store the relations it states.
-async fn forward_pass(store: &Store, client: &EdgarClient, directory: &Directory, cik: Cik) -> Result<usize> {
+async fn forward_pass(store: &Store, client: &EdgarClient, directory: &Directory, cik: Cik, kind: ExtractorKind) -> Result<usize> {
     let filings = client.filings(cik).await?;
     let Some(filing) = latest_of_form(&filings, "10-K") else { return Ok(0) };
     let url = document_url(cik, filing);
     let text = html_to_text(&client.get_text(&url).await?);
     let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
-    let out = chain::run(cik, &text, &source, &BaselineExtractor, DEFAULT_MIN_SCORE).await?;
+    let out = run_chain(kind, cik, &text, &source, DEFAULT_MIN_SCORE).await?;
     let mut n = 0;
     for mut relation in out.accepted {
         directory.apply(&mut relation);
@@ -415,7 +425,7 @@ async fn forward_pass(store: &Store, client: &EdgarClient, directory: &Directory
 
 /// Find the filers that name the company as a customer, read them, and store what they
 /// say about it. Returns the number of relations found from the other side.
-async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usize, verbose: bool) -> Result<usize> {
+async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usize, verbose: bool, kind: ExtractorKind) -> Result<usize> {
     let Some(company) = store.company(cik)? else {
         bail!("CIK {cik} finns inte i bolagslistan. Lägg till det med: term companies add");
     };
@@ -467,7 +477,7 @@ async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usi
         let Ok(html) = client.get_text(&url).await else { continue };
         let text = html_to_text(&html);
         let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
-        let out = chain::run(other, &text, &source, &BaselineExtractor, DEFAULT_MIN_SCORE).await?;
+        let out = run_chain(kind, other, &text, &source, DEFAULT_MIN_SCORE).await?;
         read += 1;
         for mut relation in out.accepted {
             directory.apply(&mut relation);
@@ -516,7 +526,7 @@ fn strength(r: &StoredRelation) -> (u8, i64) {
 
 /// Breadth first walk down the supply chain. Each company is read once, from its own
 /// filing (forward) and from the filings of those who name it as a customer (reverse).
-async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize) -> Result<()> {
+async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize, kind: ExtractorKind) -> Result<()> {
     let mut visited = std::collections::HashSet::new();
     let mut level = vec![root];
     visited.insert(root);
@@ -525,8 +535,14 @@ async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per
         for cik in &level {
             let name = store.company(*cik)?.map(|c| c.name).unwrap_or_else(|| cik.to_string());
             let directory = Directory::new(store.companies()?);
-            let forward = forward_pass(store, client, &directory, *cik).await.unwrap_or(0);
-            let reverse = reverse_pass(store, client, *cik, reverse_cap, false).await.unwrap_or(0);
+            let forward = forward_pass(store, client, &directory, *cik, kind).await.unwrap_or_else(|e| {
+                eprintln!("  fel vid läsning av {name}: {e}");
+                0
+            });
+            let reverse = reverse_pass(store, client, *cik, reverse_cap, false, kind).await.unwrap_or_else(|e| {
+                eprintln!("  fel vid omvänd sökning för {name}: {e}");
+                0
+            });
             let mut suppliers: Vec<StoredRelation> = store.chain(*cik, None)?.suppliers;
             suppliers.sort_by_key(strength);
             println!("{}{} (led {}): {} egna, {} från andra hållet, {} leverantörer", "  ".repeat(d), name, d, forward, reverse, suppliers.len());
@@ -714,21 +730,21 @@ async fn main() -> Result<()> {
             );
         }
 
-        Command::Reverse { target, ingest } => {
+        Command::Reverse { target, ingest, extractor } => {
             let store = open()?;
             let cik = resolve_target(&store, &target)?;
             let client = edgar_client()?;
-            let found = reverse_pass(&store, &client, cik, ingest, true).await?;
+            let found = reverse_pass(&store, &client, cik, ingest, true, extractor).await?;
             if ingest > 0 {
                 println!("{found} relationer funna från andra hållet. De väntar på granskning: term review list");
             }
         }
 
-        Command::Crawl { target, depth, per_level, reverse_cap } => {
+        Command::Crawl { target, depth, per_level, reverse_cap, extractor } => {
             let store = open()?;
             let root = resolve_target(&store, &target)?;
             let client = edgar_client()?;
-            crawl(&store, &client, root, depth, per_level, reverse_cap).await?;
+            crawl(&store, &client, root, depth, per_level, reverse_cap, extractor).await?;
         }
 
         Command::Named { target, file, url } => {

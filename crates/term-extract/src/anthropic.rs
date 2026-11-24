@@ -103,6 +103,18 @@ impl From<LlmRelation> for RawRelation {
     }
 }
 
+/// Read `{"relations": [...]}` as the model wrote it. Shared with the CLI extractor.
+pub fn parse_relations_value(input: &Value) -> Result<Vec<RawRelation>, ExtractError> {
+    let parsed: ToolInput = serde_json::from_value(input.clone())
+        .map_err(|e| ExtractError::Malformed(e.to_string()))?;
+    Ok(parsed.relations.into_iter().map(RawRelation::from).collect())
+}
+
+/// The system prompt, shared with the CLI extractor.
+pub fn system_prompt() -> &'static str {
+    SYSTEM
+}
+
 /// Read the tool call out of a Messages API response. Pure.
 pub fn parse_response(body: &Value) -> Result<Vec<RawRelation>, ExtractError> {
     let blocks = body

@@ -4,6 +4,7 @@
 pub mod anthropic;
 pub mod baseline;
 pub mod chain;
+pub mod claude_cli;
 pub mod eval;
 pub mod quote;
 

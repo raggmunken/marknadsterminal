@@ -87,9 +87,14 @@ cargo run -p term-cli -- ingest gm_10k.htm --cik 1467858 --extractor anthropic
 
 # Vilka bolag uppger bolaget som kund? Läs in tio av deras årsredovisningar.
 cargo run -p term-cli -- reverse GM --ingest 10
+
+# Följ kedjan nedåt, led för led. Med --extractor claude-cli läser Haiku 5.5 via
+# programmet `claude` (inloggat Claude Code, ingen API-nyckel). Står stilla utan inloggning.
+cargo run -p term-cli -- crawl GM --depth 2 --per-level 6 --reverse-cap 120 --extractor claude-cli
 ```
 
-Allt i blocket är kört utom raden med `--extractor anthropic`.
+Allt i blocket är kört utom raderna med `--extractor anthropic` och `--extractor claude-cli`.
+Språkmodellvägen är bara testad mot inspelade svar och ett stand-in-program, aldrig mot en riktig modell.
 
 ## Hela världen
 

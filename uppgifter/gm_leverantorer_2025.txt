@@ -1,0 +1,99 @@
+# GM Supplier of the Year 2025 (priser for 2024), och Overdrive Awards.
+# Kalla: https://news.gm.com/home.detail.html/Pages/topic/us/en/2025/apr/0408-supplier-of-the-year.html
+# En rad per namn. Rader som borjar med # hoppas over.
+AAA
+Adient
+Advanced Composites, Inc.
+Advanta Industries
+AISIN World Corp. of America
+Atlas Copco - Industrial Assembly Solutions
+Attentive Industries, Inc.
+BASF Coatings
+Bridgestone Corporation
+Casco Products Corporation
+CHINYANG AUTOMOTIVE CO., LTD
+Chunil Cargo Transportation Co., Ltd.
+CITIC Dicastal
+COAVIS
+COMEXPORT
+Conduent
+Continental Tire
+Cooper Standard
+CPKC
+CSN
+DAEYONG INDUSTRY CO.
+Daimay Automotive
+Dedicated Logistics, LLC
+DM CONTROL
+DN Automotive Corporation
+DY AUTO CORPORATION
+Dynamic Manufacturing, Inc.
+Eldor Corporation
+ExxonMobil Product Solutions
+FALCARE EQUIPAMENTOS INDUSTRIAIS LTDA
+FANUC CORPORATION
+Federal Express Corporation
+First Brands Group-Brake Parts Inc
+F-TECH INC.
+GALLAGHER-KAISER CORPORATION
+Gentex Corporation
+Gentherm Inc.
+GIGG Express Inc.
+GNS North America
+GP Strategies Corporation
+Grand Traverse Plastics Corp
+GROB-WERKE GmbH & Co. KG
+HANDS CORPORATION
+HARMAN International
+HDT Automotive Solutions
+Hendrick Motorsports
+HIROTEC MEXICO
+HL Mando
+HYUNDAI GLOVIS
+Ideal Contracting, LLC
+Ideal Setech, LLC
+ILJIN
+International Industrial Contracting Corporation
+Inteva Products
+JPC Automotive Co., Ltd
+Kawasaki Kisen Kaisha, Ltd.
+KIRCHHOFF Automotive
+KM&I Co., Ltd.
+Korea Electric Terminal Co., LTD.
+KUKA Systems North America
+KWANGJIN
+LG Electronics Vehicle Solutions
+Linamar
+Maersk, Inc
+Magna International
+Maxxis Tires
+Mitsubishi Turbocharger & Engine America, Inc.
+MOBIS
+MOON STAR EXPRESS LLC
+Multimatic
+Neapco Holdings, LLC
+NIPPON SEIKI NORTH AMERICA
+Nucor
+NYX LLC
+PACKARD KOREA INC
+Polimetri Indústria Metalúrgica LTDA.
+Quaker Houghton
+RIDGEVIEW INDUSTRIES
+RPM
+Schaeffler
+SHB
+SM Namsun Aluminum Automotive Parts Co., Ltd.
+SNT Motiv Co Ltd
+Summit Polymers Inc
+Syfan Logistics
+Thermoflex Corporation
+Universal Logistics Holdings, Inc.
+Valeo
+Walbridge
+Washington Penn
+Wooshin Safety Systems Co., Ltd.
+Worthington Steel
+Auria Old Fort
+Infineon
+Murata
+NorthGate

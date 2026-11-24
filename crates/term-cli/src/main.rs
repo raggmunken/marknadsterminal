@@ -88,6 +88,16 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         ingest: usize,
     },
+    /// Läs in en lista med namngivna leverantörer (till exempel ett pris från kunden). Ingen siffra, svagare än kedjan
+    Named {
+        /// Bolaget som listan gäller (ticker eller CIK)
+        target: String,
+        /// Textfil med ett namn per rad
+        file: std::path::PathBuf,
+        /// Adressen där listan står
+        #[arg(long)]
+        url: String,
+    },
     /// Bolagslistan som namn matchas mot
     Companies {
         #[command(subcommand)]
@@ -611,6 +621,45 @@ async fn main() -> Result<()> {
             }
             println!("{read} årsredovisningar lästa med den regelbaserade extraktorn. {found} relationer till {} funna från andra hållet.", company.name);
             println!("De väntar på granskning: term review list");
+        }
+
+        Command::Named { target, file, url } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let directory = Directory::new(store.companies()?);
+            let raw = std::fs::read_to_string(&file).with_context(|| format!("kunde inte läsa {}", file.display()))?;
+            // A named relation must never replace stronger evidence for the same company.
+            let stronger: std::collections::HashSet<term_core::Cik> = store
+                .chain(cik, None)?
+                .suppliers
+                .iter()
+                .filter(|r| r.relation.confidence != term_core::Confidence::Named)
+                .filter_map(|r| r.relation.counterparty.cik)
+                .collect();
+            let (mut total, mut matched, mut kept) = (0, 0, 0);
+            for line in raw.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+                let mut relation = term_core::Relation {
+                    subject: cik,
+                    counterparty: term_core::Counterparty { name: line.to_string(), cik: None },
+                    direction: Direction::Supplier,
+                    amount: None,
+                    period: None,
+                    evidence: term_core::Evidence { accession: None, url: Some(url.clone()), quote: line.to_string() },
+                    confidence: term_core::Confidence::Named,
+                    corroborated: false,
+                };
+                directory.apply(&mut relation);
+                if relation.counterparty.cik.is_some() {
+                    matched += 1;
+                }
+                if relation.counterparty.cik.is_some_and(|c| stronger.contains(&c)) {
+                    kept += 1;
+                    continue;
+                }
+                store.upsert_relation(&relation)?;
+                total += 1;
+            }
+            println!("{total} namngivna leverantörer inlästa, {matched} kopplade till ett bolag i SEC-listan, {kept} hoppade över för att starkare belägg redan finns. De väntar på granskning.");
         }
 
         Command::Companies { action } => {

@@ -42,7 +42,7 @@ pub async fn run<E: Extractor>(
     // A model reads free text, so it gets the wider selection, capped so that one
     // long report does not mean hundreds of calls. The cap is `TERM_MAX_PASSAGES`.
     let passages = if extractor.reads_free_text() {
-        let max = std::env::var("TERM_MAX_PASSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(60);
+        let max = std::env::var("TERM_MAX_PASSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(150);
         select_passages_wide(text, 3, max)
     } else {
         select_passages(text, min_score)

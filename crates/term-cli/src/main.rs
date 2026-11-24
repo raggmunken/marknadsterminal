@@ -88,6 +88,19 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         ingest: usize,
     },
+    /// Följ kedjan nedåt: leverantörerna, deras leverantörer och så vidare. Kräver TERM_USER_AGENT
+    Crawl {
+        target: String,
+        /// Hur många led ned
+        #[arg(long, default_value_t = 2)]
+        depth: usize,
+        /// Hur många bolag per led som följs vidare (starkast belägg först)
+        #[arg(long, default_value_t = 6)]
+        per_level: usize,
+        /// Hur många av bolagen som nämner ett bolag som läses per bolag
+        #[arg(long, default_value_t = 60)]
+        reverse_cap: usize,
+    },
     /// Läs in en lista med namngivna leverantörer (till exempel ett pris från kunden). Ingen siffra, svagare än kedjan
     Named {
         /// Bolaget som listan gäller (ticker eller CIK)
@@ -383,6 +396,165 @@ fn edgar_client() -> Result<EdgarClient> {
     Ok(EdgarClient::new(&user_agent)?)
 }
 
+/// Read a company's own latest 10-K and store the relations it states.
+async fn forward_pass(store: &Store, client: &EdgarClient, directory: &Directory, cik: Cik) -> Result<usize> {
+    let filings = client.filings(cik).await?;
+    let Some(filing) = latest_of_form(&filings, "10-K") else { return Ok(0) };
+    let url = document_url(cik, filing);
+    let text = html_to_text(&client.get_text(&url).await?);
+    let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
+    let out = chain::run(cik, &text, &source, &BaselineExtractor, DEFAULT_MIN_SCORE).await?;
+    let mut n = 0;
+    for mut relation in out.accepted {
+        directory.apply(&mut relation);
+        store.upsert_relation(&relation)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Find the filers that name the company as a customer, read them, and store what they
+/// say about it. Returns the number of relations found from the other side.
+async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usize, verbose: bool) -> Result<usize> {
+    let Some(company) = store.company(cik)? else {
+        bail!("CIK {cik} finns inte i bolagslistan. Lägg till det med: term companies add");
+    };
+    // The short name together with "accounted for" finds the filings where
+    // someone reports the company as a customer. The full legal name alone
+    // mostly finds banks and funds that hold its bonds.
+    let short = normalize_name(&company.name);
+    let today = unix_to_iso_minutes(now_unix())[..10].to_string();
+    let from = unix_to_iso_minutes(now_unix() - 540 * 86_400)[..10].to_string();
+    let hits = client
+        .full_text_search_all(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)), 10)
+        .await?;
+    // Filers that are not in the company list (no ticker) are added from
+    // the name the search result gives them, so that they can be read.
+    for h in &hits {
+        for (i, c) in h.ciks.iter().enumerate() {
+            if *c != cik && store.company(*c)?.is_none() {
+                if let Some(raw) = h.display_names.get(i) {
+                    let name = raw.split("  (").next().unwrap_or(raw).trim().to_string();
+                    if !name.is_empty() {
+                        store.upsert_company(&Company { cik: *c, name, ticker: None })?;
+                    }
+                }
+            }
+        }
+    }
+    let others = mentioning_companies(&hits, cik);
+    if verbose {
+        println!("{} träffar. {} andra bolag nämner {short:?} tillsammans med \"accounted for\":", hits.len(), others.len());
+        for other in &others {
+            let name = store.company(*other)?.map(|c| c.name).unwrap_or_else(|| "okänt bolag".into());
+            println!("  CIK {other}  {name}");
+        }
+    }
+    if ingest == 0 {
+        if verbose {
+            println!("Läs in deras årsredovisningar med: term reverse {} --ingest 10", cik.unpadded());
+        }
+        return Ok(0);
+    }
+
+    let directory = Directory::new(store.companies()?);
+    let (mut read, mut found) = (0, 0);
+    for other in others.into_iter().take(ingest) {
+        let Some(other_company) = store.company(other)? else { continue };
+        let Ok(filings) = client.filings(other).await else { continue };
+        let Some(filing) = latest_of_form(&filings, "10-K") else { continue };
+        let url = document_url(other, filing);
+        let Ok(html) = client.get_text(&url).await else { continue };
+        let text = html_to_text(&html);
+        let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
+        let out = chain::run(other, &text, &source, &BaselineExtractor, DEFAULT_MIN_SCORE).await?;
+        read += 1;
+        for mut relation in out.accepted {
+            directory.apply(&mut relation);
+            // The filing was found by searching for our company. If it names
+            // the company by its short name or its ticker, take that as our
+            // company. The relation still goes to a person for review.
+            let name = relation.counterparty.name.as_str();
+            if relation.counterparty.cik.is_none()
+                && (normalize_name(name) == short || company.ticker.as_deref() == Some(name))
+            {
+                relation.counterparty.cik = Some(cik);
+            }
+            store.upsert_relation(&relation)?;
+            // Step 6: what the other company says about ours, seen from our side.
+            if relation.counterparty.cik == Some(cik) {
+                if let Some(mirrored) = term_resolve::mirror(&relation, &other_company.name) {
+                    store.upsert_relation(&mirrored)?;
+                    found += 1;
+                    if verbose {
+                        println!("  {} uppger {} som {}", other_company.name, company.name, match relation.direction {
+                            Direction::Customer => "kund",
+                            Direction::Supplier => "leverantör",
+                        });
+                    }
+                }
+            }
+        }
+    }
+    if verbose {
+        println!("{read} årsredovisningar lästa med den regelbaserade extraktorn.");
+    }
+    Ok(found)
+}
+
+fn strength(r: &StoredRelation) -> (u8, i64) {
+    use term_core::Confidence::*;
+    let rank = match r.relation.confidence {
+        Disclosed => 0,
+        Reverse => 1,
+        Registry => 2,
+        Named => 3,
+    };
+    let size = r.relation.amount.as_ref().map(|a| -(a.value * 100.0) as i64).unwrap_or(0);
+    (rank, size)
+}
+
+/// Breadth first walk down the supply chain. Each company is read once, from its own
+/// filing (forward) and from the filings of those who name it as a customer (reverse).
+async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize) -> Result<()> {
+    let mut visited = std::collections::HashSet::new();
+    let mut level = vec![root];
+    visited.insert(root);
+    for d in 0..depth {
+        let mut next = Vec::new();
+        for cik in &level {
+            let name = store.company(*cik)?.map(|c| c.name).unwrap_or_else(|| cik.to_string());
+            let directory = Directory::new(store.companies()?);
+            let forward = forward_pass(store, client, &directory, *cik).await.unwrap_or(0);
+            let reverse = reverse_pass(store, client, *cik, reverse_cap, false).await.unwrap_or(0);
+            let mut suppliers: Vec<StoredRelation> = store.chain(*cik, None)?.suppliers;
+            suppliers.sort_by_key(strength);
+            println!("{}{} (led {}): {} egna, {} från andra hållet, {} leverantörer", "  ".repeat(d), name, d, forward, reverse, suppliers.len());
+            let mut followed = 0;
+            for r in &suppliers {
+                let shown = followed < per_level;
+                if let Some(c) = r.relation.counterparty.cik {
+                    if !visited.contains(&c) && shown {
+                        visited.insert(c);
+                        next.push(c);
+                        followed += 1;
+                    }
+                }
+                if shown {
+                    print!("{}", "  ".repeat(d + 1));
+                    print_relation(r);
+                }
+            }
+        }
+        level = next;
+        if level.is_empty() {
+            break;
+        }
+    }
+    println!("{} bolag besökta. Allt väntar på granskning: term review list", visited.len());
+    Ok(())
+}
+
 fn resolve_target(store: &Store, target: &str) -> Result<Cik> {
     if let Ok(cik) = target.parse::<Cik>() {
         return Ok(cik);
@@ -545,82 +717,18 @@ async fn main() -> Result<()> {
         Command::Reverse { target, ingest } => {
             let store = open()?;
             let cik = resolve_target(&store, &target)?;
-            let Some(company) = store.company(cik)? else {
-                bail!("CIK {cik} finns inte i bolagslistan. Lägg till det med: term companies add");
-            };
             let client = edgar_client()?;
-            // The short name together with "accounted for" finds the filings where
-            // someone reports the company as a customer. The full legal name alone
-            // mostly finds banks and funds that hold its bonds.
-            let short = normalize_name(&company.name);
-            let today = unix_to_iso_minutes(now_unix())[..10].to_string();
-            let from = unix_to_iso_minutes(now_unix() - 540 * 86_400)[..10].to_string();
-            let hits = client
-                .full_text_search_all(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)), 10)
-                .await?;
-            // Filers that are not in the company list (no ticker) are added from
-            // the name the search result gives them, so that they can be read.
-            for h in &hits {
-                for (i, c) in h.ciks.iter().enumerate() {
-                    if *c != cik && store.company(*c)?.is_none() {
-                        if let Some(raw) = h.display_names.get(i) {
-                            let name = raw.split("  (").next().unwrap_or(raw).trim().to_string();
-                            if !name.is_empty() {
-                                store.upsert_company(&Company { cik: *c, name, ticker: None })?;
-                            }
-                        }
-                    }
-                }
+            let found = reverse_pass(&store, &client, cik, ingest, true).await?;
+            if ingest > 0 {
+                println!("{found} relationer funna från andra hållet. De väntar på granskning: term review list");
             }
-            let others = mentioning_companies(&hits, cik);
-            println!("{} träffar. {} andra bolag nämner {short:?} tillsammans med \"accounted for\":", hits.len(), others.len());
-            for other in &others {
-                let name = store.company(*other)?.map(|c| c.name).unwrap_or_else(|| "okänt bolag".into());
-                println!("  CIK {other}  {name}");
-            }
-            if ingest == 0 {
-                println!("Läs in deras årsredovisningar med: term reverse {} --ingest 10", cik.unpadded());
-                return Ok(());
-            }
+        }
 
-            let directory = Directory::new(store.companies()?);
-            let (mut read, mut found) = (0, 0);
-            for other in others.into_iter().take(ingest) {
-                let Some(other_company) = store.company(other)? else { continue };
-                let filings = client.filings(other).await?;
-                let Some(filing) = latest_of_form(&filings, "10-K") else { continue };
-                let url = document_url(other, filing);
-                let text = html_to_text(&client.get_text(&url).await?);
-                let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
-                let out = chain::run(other, &text, &source, &BaselineExtractor, DEFAULT_MIN_SCORE).await?;
-                read += 1;
-                for mut relation in out.accepted {
-                    directory.apply(&mut relation);
-                    // The filing was found by searching for our company. If it names
-                    // the company by its short name or its ticker, take that as our
-                    // company. The relation still goes to a person for review.
-                    let name = relation.counterparty.name.as_str();
-                    if relation.counterparty.cik.is_none()
-                        && (normalize_name(name) == short || company.ticker.as_deref() == Some(name))
-                    {
-                        relation.counterparty.cik = Some(cik);
-                    }
-                    store.upsert_relation(&relation)?;
-                    // Step 6: what the other company says about ours, seen from our side.
-                    if relation.counterparty.cik == Some(cik) {
-                        if let Some(mirrored) = term_resolve::mirror(&relation, &other_company.name) {
-                            store.upsert_relation(&mirrored)?;
-                            found += 1;
-                            println!("  {} uppger {} som {}", other_company.name, company.name, match relation.direction {
-                                Direction::Customer => "kund",
-                                Direction::Supplier => "leverantör",
-                            });
-                        }
-                    }
-                }
-            }
-            println!("{read} årsredovisningar lästa med den regelbaserade extraktorn. {found} relationer till {} funna från andra hållet.", company.name);
-            println!("De väntar på granskning: term review list");
+        Command::Crawl { target, depth, per_level, reverse_cap } => {
+            let store = open()?;
+            let root = resolve_target(&store, &target)?;
+            let client = edgar_client()?;
+            crawl(&store, &client, root, depth, per_level, reverse_cap).await?;
         }
 
         Command::Named { target, file, url } => {

@@ -548,6 +548,20 @@ async fn main() -> Result<()> {
             let hits = client
                 .full_text_search_all(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)), 10)
                 .await?;
+            // Filers that are not in the company list (no ticker) are added from
+            // the name the search result gives them, so that they can be read.
+            for h in &hits {
+                for (i, c) in h.ciks.iter().enumerate() {
+                    if *c != cik && store.company(*c)?.is_none() {
+                        if let Some(raw) = h.display_names.get(i) {
+                            let name = raw.split("  (").next().unwrap_or(raw).trim().to_string();
+                            if !name.is_empty() {
+                                store.upsert_company(&Company { cik: *c, name, ticker: None })?;
+                            }
+                        }
+                    }
+                }
+            }
             let others = mentioning_companies(&hits, cik);
             println!("{} träffar. {} andra bolag nämner {short:?} tillsammans med \"accounted for\":", hits.len(), others.len());
             for other in &others {

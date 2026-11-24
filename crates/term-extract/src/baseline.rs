@@ -32,6 +32,22 @@ static CUSTOMER_PAIR: LazyLock<Regex> = LazyLock::new(|| {
     .expect("pair pattern compiles")
 });
 
+/// "net sales to General Motors Company (including its subsidiaries) were approximately 18%".
+static SALES_TO: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?P<basis>(?:total |consolidated |net |worldwide )*(?:sales|revenues?)) to (?P<name>{NAME})(?: \([^)]{{0,60}}\))?[^.%]{{0,120}}? (?:were|was|represented|accounted for) (?:approximately |about |roughly )?(?P<pct>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent)"
+    ))
+    .expect("sales-to pattern compiles")
+});
+
+/// "our top five customers accounted for 37% of net sales, with General Motors Company representing 18%".
+static NAME_REPRESENTING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?P<name>{NAME}),? representing (?:approximately |about |roughly )?(?P<pct>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent)"
+    ))
+    .expect("representing pattern compiles")
+});
+
 static SUPPLIER_ROLE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?P<name>{NAME}),? (?:is|remains|was) (?:our|the Company's) (?:sole|single|only|primary|principal) (?:source|supplier|manufacturer)"
@@ -95,6 +111,28 @@ impl BaselineExtractor {
                 fiscal_year,
                 quote: whole.as_str().to_string(),
             });
+        }
+
+        for (pattern, has_basis) in [(&*SALES_TO, true), (&*NAME_REPRESENTING, false)] {
+            for caps in pattern.captures_iter(&text) {
+                let whole = caps.get(0).expect("group 0 always exists");
+                let Some(name) = clean_name(&caps["name"]) else { continue };
+                let Ok(value) = caps["pct"].parse::<f64>() else { continue };
+                if value <= 0.0 || value > 100.0 {
+                    continue;
+                }
+                out.push(RawRelation {
+                    counterparty: name,
+                    direction: Direction::Customer,
+                    amount: Some(Amount {
+                        value,
+                        unit: Unit::Percent,
+                        basis: if has_basis { Some(caps["basis"].trim().to_string()) } else { None },
+                    }),
+                    fiscal_year,
+                    quote: whole.as_str().to_string(),
+                });
+            }
         }
 
         for caps in CUSTOMER_PAIR.captures_iter(&text) {
@@ -214,6 +252,18 @@ mod tests {
         assert_eq!(aspen[0].counterparty, "GM");
         assert_eq!(aspen[0].amount.as_ref().unwrap().value, 59.0);
         assert_eq!(aspen[0].amount.as_ref().unwrap().basis.as_deref(), Some("total revenue"));
+    }
+
+    #[test]
+    fn phinia_phrasings() {
+        let a = run("The Company\u{2019}s worldwide net sales to General Motors Company during the years ended December 31, 2025, 2024, and 2023 were 18%, 17% , and 16%, respectively.");
+        assert_eq!(a.len(), 1, "{a:?}");
+        assert_eq!(a[0].counterparty, "General Motors Company");
+        assert_eq!(a[0].amount.as_ref().unwrap().value, 18.0);
+        let b = run("Our top five customers accounted for approximately 37% of our net sales, with General Motors Company representing 18%.");
+        assert!(b.iter().any(|r| r.counterparty == "General Motors Company" && r.amount.as_ref().unwrap().value == 18.0), "{b:?}");
+        let c = run("Consolidated net sales to General Motors Company (including its subsidiaries) were approximately 18 %, 17 %, and 16 % for the years ended December 31, 2025.");
+        assert_eq!(c.len(), 1, "{c:?}");
     }
 
     #[test]

@@ -189,6 +189,73 @@ const SIGNALS: &[(&str, u32)] = &[
     ("depend on", 1),
 ];
 
+/// Signals for the language model path. Contracts, press releases, prospectuses and
+/// proxy statements do not use the fixed phrases above, so the net is cast wider and a
+/// model decides what the paragraph really says. Weights are rules of thumb.
+const WIDE_SIGNALS: &[(&str, u32)] = &[
+    ("supply agreement", 3),
+    ("supply and", 2),
+    ("purchase agreement", 3),
+    ("master agreement", 2),
+    ("offtake", 3),
+    ("agreement with", 2),
+    ("agreement between", 2),
+    ("awarded", 2),
+    ("selected as", 2),
+    ("selected by", 2),
+    ("contract with", 2),
+    ("supplied by", 3),
+    ("supplier", 2),
+    ("suppliers", 1),
+    ("supplies", 1),
+    ("customer", 2),
+    ("customers", 1),
+    ("purchases from", 3),
+    ("sourced from", 3),
+    ("sole source", 3),
+    ("single source", 3),
+    ("manufactured by", 2),
+    ("manufacturer", 1),
+    ("smelter", 3),
+    ("related party", 2),
+    ("related person", 2),
+    ("joint venture", 1),
+    ("% of", 1),
+    ("percent of", 1),
+    ("accounted for", 2),
+    ("largest", 1),
+    ("long-term", 1),
+    ("partner", 1),
+];
+
+/// Like [`select_passages`] with the wider signal set, keeping at most `max` paragraphs:
+/// the highest scoring ones, returned in document order.
+pub fn select_passages_wide(text: &str, min_score: u32, max: usize) -> Vec<Passage> {
+    let mut all: Vec<Passage> = text
+        .lines()
+        .enumerate()
+        .filter(|(_, paragraph)| paragraph.chars().count() >= MIN_PARAGRAPH_CHARS)
+        .filter_map(|(index, paragraph)| {
+            let lower = paragraph.to_lowercase();
+            let mut score = 0;
+            let mut hits = Vec::new();
+            for &(phrase, weight) in WIDE_SIGNALS {
+                if lower.contains(phrase) {
+                    score += weight;
+                    hits.push(phrase);
+                }
+            }
+            (score >= min_score).then(|| Passage { index, text: paragraph.to_string(), score, hits })
+        })
+        .collect();
+    if all.len() > max {
+        all.sort_by(|a, b| b.score.cmp(&a.score).then(a.index.cmp(&b.index)));
+        all.truncate(max);
+        all.sort_by_key(|p| p.index);
+    }
+    all
+}
+
 /// Pick paragraphs whose signal score reaches `min_score`, in document order.
 pub fn select_passages(text: &str, min_score: u32) -> Vec<Passage> {
     text.lines()
@@ -217,6 +284,19 @@ pub fn select_passages(text: &str, min_score: u32) -> Vec<Passage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wide_selection_finds_contract_language_and_caps_the_count() {
+        let contract = "The Company entered into a supply agreement with Polar Castings Ltd. under which Polar will supply housings for five years.";
+        let filler = "This paragraph talks about the weather in the region and nothing else of any relevance to the business at all.";
+        let text = format!("{filler}\n{contract}\n{filler}");
+        assert!(select_passages(&text, DEFAULT_MIN_SCORE).is_empty());
+        let wide = select_passages_wide(&text, 3, 10);
+        assert_eq!(wide.len(), 1);
+        assert_eq!(wide[0].text, contract);
+        let many = vec![contract; 30].join("\n");
+        assert_eq!(select_passages_wide(&many, 3, 5).len(), 5);
+    }
 
     #[test]
     fn strips_tags_and_keeps_one_paragraph_per_line() {

@@ -3903,6 +3903,7 @@ dependencies = [
 name = "term-extract"
 version = "0.0.1"
 dependencies = [
+ "futures-util",
  "regex",
  "reqwest",
  "serde",
@@ -3917,6 +3918,7 @@ dependencies = [
 name = "term-ingest"
 version = "0.0.1"
 dependencies = [
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

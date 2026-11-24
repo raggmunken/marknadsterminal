@@ -4,10 +4,11 @@
 use term_core::names::normalize_name;
 use crate::quote::verify_quote;
 use crate::{ExtractError, Extractor, RawRelation};
+use futures_util::StreamExt;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use term_core::{Cik, Confidence, Counterparty, Evidence, Period, Relation};
-use term_parse::{select_passages, Passage};
+use term_parse::{select_passages, select_passages_wide, Passage};
 
 /// Which document the text came from. Copied into every piece of evidence.
 #[derive(Debug, Clone, Default)]
@@ -38,12 +39,32 @@ pub async fn run<E: Extractor>(
     extractor: &E,
     min_score: u32,
 ) -> Result<ChainOutput, ExtractError> {
-    let passages = select_passages(text, min_score);
+    // A model reads free text, so it gets the wider selection, capped so that one
+    // long report does not mean hundreds of calls. The cap is `TERM_MAX_PASSAGES`.
+    let passages = if extractor.reads_free_text() {
+        let max = std::env::var("TERM_MAX_PASSAGES").ok().and_then(|v| v.parse().ok()).unwrap_or(60);
+        select_passages_wide(text, 3, max)
+    } else {
+        select_passages(text, min_score)
+    };
     let mut accepted: BTreeMap<(String, bool), Relation> = BTreeMap::new();
     let mut rejected = Vec::new();
 
-    for passage in &passages {
-        for raw in extractor.extract(&passage.text).await? {
+    // Passages go to the extractor several at a time. The results are read in
+    // passage order, so the outcome does not depend on which call finishes first.
+    let concurrency = std::env::var("TERM_LLM_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(8)
+        .max(1);
+    let answers: Vec<Result<Vec<RawRelation>, ExtractError>> = futures_util::stream::iter(passages.iter())
+        .map(|p| extractor.extract(&p.text))
+        .buffered(concurrency)
+        .collect()
+        .await;
+
+    for (passage, answer) in passages.iter().zip(answers) {
+        for raw in answer? {
             // The quote must be in the passage the extractor was shown,
             // not merely somewhere in the document.
             if let Err(e) = verify_quote(&passage.text, &raw.quote) {

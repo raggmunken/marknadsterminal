@@ -104,6 +104,20 @@ enum Command {
         reverse_cap: usize,
         #[arg(long, value_enum, default_value_t = ExtractorKind::Baseline)]
         extractor: ExtractorKind,
+        /// Hur långt bakåt dokument läses, i dagar
+        #[arg(long, default_value_t = 540)]
+        since_days: i64,
+    },
+    /// Läs alla gratis SEC-dokument för ett bolag: årsredovisningar, avtal, pressmeddelanden, prospekt, mineralrapporter. Kräver TERM_USER_AGENT
+    Docs {
+        target: String,
+        #[arg(long, default_value_t = 540)]
+        since_days: i64,
+        /// Vilka blanketter som läses, kommaseparerat. Standard: alla familjer
+        #[arg(long, value_delimiter = ',')]
+        forms: Vec<String>,
+        #[arg(long, value_enum, default_value_t = ExtractorKind::Baseline)]
+        extractor: ExtractorKind,
     },
     /// Läs in en lista med namngivna leverantörer (till exempel ett pris från kunden). Ingen siffra, svagare än kedjan
     Named {
@@ -412,21 +426,55 @@ fn edgar_client() -> Result<EdgarClient> {
     Ok(EdgarClient::new(&user_agent)?)
 }
 
-/// Read a company's own latest 10-K and store the relations it states.
-async fn forward_pass(store: &Store, client: &EdgarClient, directory: &Directory, cik: Cik, kind: ExtractorKind) -> Result<usize> {
+/// The newest annual report of any kind: 10-K, 20-F or 40-F.
+fn latest_annual(filings: &[term_ingest::Filing]) -> Option<&term_ingest::Filing> {
+    ["10-K", "20-F", "40-F"]
+        .iter()
+        .filter_map(|f| latest_of_form(filings, f))
+        .max_by(|a, b| a.filing_date.cmp(&b.filing_date))
+}
+
+struct DocsStats {
+    documents: usize,
+    relations: usize,
+}
+
+/// Read a company's own filings of every family that is free at SEC (annual reports,
+/// quarterlies, material agreements, press releases, prospectuses, proxy statements,
+/// conflict minerals reports) and store the relations they state.
+#[allow(clippy::too_many_arguments)]
+async fn docs_pass(
+    store: &Store,
+    client: &EdgarClient,
+    directory: &Directory,
+    cik: Cik,
+    since_days: i64,
+    forms: &[String],
+    kind: ExtractorKind,
+    verbose: bool,
+) -> Result<DocsStats> {
     let filings = client.filings(cik).await?;
-    let Some(filing) = latest_of_form(&filings, "10-K") else { return Ok(0) };
-    let url = document_url(cik, filing);
-    let text = html_to_text(&client.get_text(&url).await?);
-    let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url) };
-    let out = run_chain(kind, cik, &text, &source, DEFAULT_MIN_SCORE).await?;
-    let mut n = 0;
-    for mut relation in out.accepted {
-        directory.apply(&mut relation);
-        store.upsert_relation(&relation)?;
-        n += 1;
+    let since = unix_to_iso_minutes(now_unix() - since_days * 86_400)[..10].to_string();
+    let mut stats = DocsStats { documents: 0, relations: 0 };
+    for (filing, family) in term_ingest::docs::select(&filings, forms, &since) {
+        for url in client.filing_documents(cik, filing, family.exhibits, 3).await {
+            let Ok(html) = client.get_text(&url).await else { continue };
+            let text = html_to_text(&html);
+            let source = SourceRef { accession: Some(filing.accession.clone()), url: Some(url.clone()) };
+            let out = run_chain(kind, cik, &text, &source, DEFAULT_MIN_SCORE).await?;
+            stats.documents += 1;
+            let n = out.accepted.len();
+            for mut relation in out.accepted {
+                directory.apply(&mut relation);
+                store.upsert_relation(&relation)?;
+            }
+            stats.relations += n;
+            if verbose {
+                println!("  {} {}  {} passager, {} relationer  {}", filing.form, filing.filing_date, out.passages.len(), n, url);
+            }
+        }
     }
-    Ok(n)
+    Ok(stats)
 }
 
 /// Find the filers that name the company as a customer, read them, and store what they
@@ -441,9 +489,15 @@ async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usi
     let short = normalize_name(&company.name);
     let today = unix_to_iso_minutes(now_unix())[..10].to_string();
     let from = unix_to_iso_minutes(now_unix() - 540 * 86_400)[..10].to_string();
-    let hits = client
-        .full_text_search_all(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)), 10)
-        .await?;
+    // Several ways of saying that someone is a customer. The hits are pooled.
+    let mut hits = Vec::new();
+    for second in ["accounted for", "largest customers", "significant customer", "major customer", "sales to"] {
+        hits.extend(
+            client
+                .full_text_search_all(&[short.as_str(), second], &["10-K", "20-F", "40-F"], Some((&from, &today)), 10)
+                .await?,
+        );
+    }
     // Filers that are not in the company list (no ticker) are added from
     // the name the search result gives them, so that they can be read.
     for h in &hits {
@@ -460,7 +514,7 @@ async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usi
     }
     let others = mentioning_companies(&hits, cik);
     if verbose {
-        println!("{} träffar. {} andra bolag nämner {short:?} tillsammans med \"accounted for\":", hits.len(), others.len());
+        println!("{} träffar. {} andra bolag nämner {short:?} som kund:", hits.len(), others.len());
         for other in &others {
             let name = store.company(*other)?.map(|c| c.name).unwrap_or_else(|| "okänt bolag".into());
             println!("  CIK {other}  {name}");
@@ -478,7 +532,7 @@ async fn reverse_pass(store: &Store, client: &EdgarClient, cik: Cik, ingest: usi
     for other in others.into_iter().take(ingest) {
         let Some(other_company) = store.company(other)? else { continue };
         let Ok(filings) = client.filings(other).await else { continue };
-        let Some(filing) = latest_of_form(&filings, "10-K") else { continue };
+        let Some(filing) = latest_annual(&filings) else { continue };
         let url = document_url(other, filing);
         let Ok(html) = client.get_text(&url).await else { continue };
         let text = html_to_text(&html);
@@ -532,7 +586,7 @@ fn strength(r: &StoredRelation) -> (u8, i64) {
 
 /// Breadth first walk down the supply chain. Each company is read once, from its own
 /// filing (forward) and from the filings of those who name it as a customer (reverse).
-async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize, kind: ExtractorKind) -> Result<()> {
+async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize, kind: ExtractorKind, since_days: i64) -> Result<()> {
     let mut visited = std::collections::HashSet::new();
     let mut level = vec![root];
     visited.insert(root);
@@ -541,10 +595,14 @@ async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per
         for cik in &level {
             let name = store.company(*cik)?.map(|c| c.name).unwrap_or_else(|| cik.to_string());
             let directory = Directory::new(store.companies()?);
-            let forward = forward_pass(store, client, &directory, *cik, kind).await.unwrap_or_else(|e| {
-                eprintln!("  fel vid läsning av {name}: {e}");
-                0
-            });
+            let all_forms: Vec<String> = term_ingest::docs::default_forms().iter().map(|f| f.to_string()).collect();
+            let forward = docs_pass(store, client, &directory, *cik, since_days, &all_forms, kind, false)
+                .await
+                .map(|s| s.relations)
+                .unwrap_or_else(|e| {
+                    eprintln!("  fel vid läsning av {name}: {e}");
+                    0
+                });
             let reverse = reverse_pass(store, client, *cik, reverse_cap, false, kind).await.unwrap_or_else(|e| {
                 eprintln!("  fel vid omvänd sökning för {name}: {e}");
                 0
@@ -746,11 +804,25 @@ async fn main() -> Result<()> {
             }
         }
 
-        Command::Crawl { target, depth, per_level, reverse_cap, extractor } => {
+        Command::Docs { target, since_days, forms, extractor } => {
+            let store = open()?;
+            let cik = resolve_target(&store, &target)?;
+            let client = edgar_client()?;
+            let forms: Vec<String> = if forms.is_empty() {
+                term_ingest::docs::default_forms().iter().map(|f| f.to_string()).collect()
+            } else {
+                forms
+            };
+            let directory = Directory::new(store.companies()?);
+            let stats = docs_pass(&store, &client, &directory, cik, since_days, &forms, extractor, true).await?;
+            println!("{} dokument lästa, {} relationer. De väntar på granskning: term review list", stats.documents, stats.relations);
+        }
+
+        Command::Crawl { target, depth, per_level, reverse_cap, extractor, since_days } => {
             let store = open()?;
             let root = resolve_target(&store, &target)?;
             let client = edgar_client()?;
-            crawl(&store, &client, root, depth, per_level, reverse_cap, extractor).await?;
+            crawl(&store, &client, root, depth, per_level, reverse_cap, extractor, since_days).await?;
         }
 
         Command::Named { target, file, url } => {

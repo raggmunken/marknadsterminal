@@ -74,6 +74,10 @@ impl Extractor for ClaudeCliExtractor {
         &self.model
     }
 
+    fn reads_free_text(&self) -> bool {
+        true
+    }
+
     async fn extract(&self, passage: &str) -> Result<Vec<RawRelation>, ExtractError> {
         let system = format!("{} {FORMAT}", system_prompt());
         let mut child = Command::new(&self.program)

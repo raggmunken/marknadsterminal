@@ -57,20 +57,34 @@ impl Extractor for OpenAiCompatExtractor {
         &self.model
     }
 
+    fn reads_free_text(&self) -> bool {
+        true
+    }
+
     async fn extract(&self, passage: &str) -> Result<Vec<RawRelation>, ExtractError> {
-        let response = self
-            .http
-            .post(format!("{}/chat/completions", self.base_url))
-            .bearer_auth(&self.api_key)
-            .json(&build_request(&self.model, passage))
-            .send()
-            .await
-            .map_err(|e| ExtractError::Http(e.to_string()))?;
-        let status = response.status();
-        let text = response.text().await.map_err(|e| ExtractError::Http(e.to_string()))?;
-        if !status.is_success() {
+        // Rate limits (429) and server errors (5xx) get up to two more tries after a pause.
+        let mut attempt = 0;
+        let text = loop {
+            let response = self
+                .http
+                .post(format!("{}/chat/completions", self.base_url))
+                .bearer_auth(&self.api_key)
+                .json(&build_request(&self.model, passage))
+                .send()
+                .await
+                .map_err(|e| ExtractError::Http(e.to_string()))?;
+            let status = response.status();
+            let text = response.text().await.map_err(|e| ExtractError::Http(e.to_string()))?;
+            if status.is_success() {
+                break text;
+            }
+            if (status.as_u16() == 429 || status.is_server_error()) && attempt < 2 {
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(2 * attempt)).await;
+                continue;
+            }
             return Err(ExtractError::Api { status: status.as_u16(), body: text });
-        }
+        };
         let body: Value = serde_json::from_str(&text).map_err(|e| ExtractError::Malformed(e.to_string()))?;
         parse_response(&body)
     }

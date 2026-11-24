@@ -88,6 +88,10 @@ cargo run -p term-cli -- ingest gm_10k.htm --cik 1467858 --extractor anthropic
 # Vilka bolag uppger bolaget som kund? Läs in tio av deras årsredovisningar.
 cargo run -p term-cli -- reverse GM --ingest 10
 
+# Alla gratis dokument för ett bolag: årsredovisningar, avtalsbilagor, 8-K, prospekt,
+# mineralrapporter, fullmakter. Se docs/rapporter.md för vilka lagkrav som ligger bakom.
+cargo run -p term-cli -- docs GM --extractor claude-cli
+
 # Följ kedjan nedåt, led för led. Med --extractor claude-cli läser Haiku 5.5 via
 # programmet `claude` (inloggat Claude Code, ingen API-nyckel). Står stilla utan inloggning.
 cargo run -p term-cli -- crawl GM --depth 2 --per-level 6 --reverse-cap 120 --extractor claude-cli

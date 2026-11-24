@@ -43,4 +43,10 @@ pub trait Extractor {
     fn name(&self) -> &str;
 
     async fn extract(&self, passage: &str) -> Result<Vec<RawRelation>, ExtractError>;
+
+    /// Whether the extractor can read free text, so that it is shown more paragraphs
+    /// than the fixed phrase patterns need. False for the rule based extractor.
+    fn reads_free_text(&self) -> bool {
+        false
+    }
 }

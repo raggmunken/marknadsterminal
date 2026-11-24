@@ -157,6 +157,10 @@ impl Extractor for AnthropicExtractor {
         &self.model
     }
 
+    fn reads_free_text(&self) -> bool {
+        true
+    }
+
     async fn extract(&self, passage: &str) -> Result<Vec<RawRelation>, ExtractError> {
         let response = self
             .http

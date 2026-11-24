@@ -23,6 +23,15 @@ static CUSTOMER_SHARE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("customer pattern compiles")
 });
 
+/// Two customers in one sentence: "A and B accounted for 12% and 10% of sales".
+/// The numbers are paired with the names in the order they are written.
+static CUSTOMER_PAIR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?P<a>{NAME}),? and (?P<b>{NAME}),? (?:accounted for|represented|comprised) (?:approximately |about |roughly )?(?P<p1>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent),? and (?:approximately |about |roughly )?(?P<p2>\d{{1,3}}(?:\.\d+)?) ?(?:%|percent)(?:,? respectively,?)? of (?:our |the Company's )?(?P<basis>(?:total |consolidated |net )*(?:sales|revenues?|accounts receivable|trade receivables))"
+    ))
+    .expect("pair pattern compiles")
+});
+
 static SUPPLIER_ROLE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?P<name>{NAME}),? (?:is|remains|was) (?:our|the Company's) (?:sole|single|only|primary|principal) (?:source|supplier|manufacturer)"
@@ -86,6 +95,24 @@ impl BaselineExtractor {
                 fiscal_year,
                 quote: whole.as_str().to_string(),
             });
+        }
+
+        for caps in CUSTOMER_PAIR.captures_iter(&text) {
+            let whole = caps.get(0).expect("group 0 always exists");
+            for (who, pct) in [("a", "p1"), ("b", "p2")] {
+                let Some(name) = clean_name(&caps[who]) else { continue };
+                let Ok(value) = caps[pct].parse::<f64>() else { continue };
+                if value <= 0.0 || value > 100.0 {
+                    continue;
+                }
+                out.push(RawRelation {
+                    counterparty: name,
+                    direction: Direction::Customer,
+                    amount: Some(Amount { value, unit: Unit::Percent, basis: Some(caps["basis"].to_string()) }),
+                    fiscal_year,
+                    quote: whole.as_str().to_string(),
+                });
+            }
         }
 
         for pattern in [&*SUPPLIER_ROLE, &*SUPPLIER_VERB] {
@@ -197,9 +224,24 @@ mod tests {
     }
 
     #[test]
-    fn skips_ambiguous_pairs() {
+    fn pairs_two_customers_with_two_numbers_in_order() {
         let found = run("Alpha Stores Inc. and Beta Markets Inc. accounted for 12% and 10% of net sales.");
-        assert!(found.is_empty(), "got {found:?}");
+        assert_eq!(found.len(), 2, "got {found:?}");
+        assert_eq!(found[0].counterparty, "Alpha Stores Inc");
+        assert_eq!(found[0].amount.as_ref().unwrap().value, 12.0);
+        assert_eq!(found[1].counterparty, "Beta Markets Inc");
+        assert_eq!(found[1].amount.as_ref().unwrap().value, 10.0);
+        let aspen = run("GM and Distribution represented 59% and 9% of our total revenue in 2025.");
+        assert_eq!(aspen.len(), 2, "got {aspen:?}");
+        assert_eq!(aspen[0].counterparty, "GM");
+        assert_eq!(aspen[0].amount.as_ref().unwrap().value, 59.0);
+    }
+
+    #[test]
+    fn three_names_with_two_numbers_stay_unparsed() {
+        let found = run("Alpha Stores Inc., Beta Markets Inc. and Gamma Retail Inc. accounted for 12% and 10% of net sales.");
+        assert!(found.len() <= 2, "got {found:?}");
+        assert!(found.iter().all(|r| r.counterparty != "Alpha Stores Inc"), "got {found:?}");
     }
 
     #[test]

@@ -106,7 +106,37 @@ pub fn mentioning_companies(hits: &[SearchHit], exclude: Cik) -> Vec<Cik> {
     out
 }
 
+/// The address for one page of results. EDGAR returns at most 100 hits per page.
+pub fn full_text_page_url(base: &str, offset: usize) -> String {
+    if offset == 0 {
+        base.to_string()
+    } else {
+        format!("{base}&from={offset}")
+    }
+}
+
 impl EdgarClient {
+    /// All hits, page by page, up to `max_pages` pages. Stops at the first short page.
+    pub async fn full_text_search_all(
+        &self,
+        phrases: &[&str],
+        forms: &[&str],
+        dates: Option<(&str, &str)>,
+        max_pages: usize,
+    ) -> Result<Vec<SearchHit>, IngestError> {
+        let base = full_text_url(phrases, forms, dates)?;
+        let mut all = Vec::new();
+        for page in 0..max_pages.max(1) {
+            let hits = parse_full_text(&self.get_text(&full_text_page_url(&base, page * 100)).await?)?;
+            let n = hits.len();
+            all.extend(hits);
+            if n < 100 {
+                break;
+            }
+        }
+        Ok(all)
+    }
+
     pub async fn full_text_search(
         &self,
         phrases: &[&str],

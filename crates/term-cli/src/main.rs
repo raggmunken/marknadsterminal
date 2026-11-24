@@ -546,7 +546,7 @@ async fn main() -> Result<()> {
             let today = unix_to_iso_minutes(now_unix())[..10].to_string();
             let from = unix_to_iso_minutes(now_unix() - 540 * 86_400)[..10].to_string();
             let hits = client
-                .full_text_search(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)))
+                .full_text_search_all(&[short.as_str(), "accounted for"], &["10-K"], Some((&from, &today)), 10)
                 .await?;
             let others = mentioning_companies(&hits, cik);
             println!("{} träffar. {} andra bolag nämner {short:?} tillsammans med \"accounted for\":", hits.len(), others.len());

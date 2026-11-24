@@ -368,6 +368,8 @@ enum ExtractorKind {
     Anthropic,
     /// Programmet `claude` (Claude Code) i terminalen, standard Haiku 5.5. Ingen API-nyckel, men inloggad
     ClaudeCli,
+    /// Valfri tjänst med OpenAI-format. Läser TERM_LLM_BASE_URL, TERM_LLM_API_KEY och TERM_LLM_MODEL
+    OpenaiCompat,
 }
 
 fn read_as_text(path: &Path) -> Result<String> {
@@ -390,6 +392,10 @@ async fn run_chain(
         ExtractorKind::Baseline => chain::run(cik, text, source, &BaselineExtractor, min_score).await?,
         ExtractorKind::Anthropic => {
             let llm = AnthropicExtractor::from_env()?;
+            chain::run(cik, text, source, &llm, min_score).await?
+        }
+        ExtractorKind::OpenaiCompat => {
+            let llm = term_extract::openai_compat::OpenAiCompatExtractor::from_env()?;
             chain::run(cik, text, source, &llm, min_score).await?
         }
         ExtractorKind::ClaudeCli => {

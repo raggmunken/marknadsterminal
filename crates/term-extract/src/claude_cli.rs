@@ -19,7 +19,7 @@ use tokio::process::Command;
 /// Overridden by `TERM_LLM_MODEL`.
 pub const DEFAULT_CLI_MODEL: &str = "claude-haiku-5-5";
 
-const FORMAT: &str = "Answer with one JSON object and nothing else, no code fence, in this form: \
+pub const FORMAT: &str = "Answer with one JSON object and nothing else, no code fence, in this form: \
 {\"relations\": [{\"counterparty\": string, \"direction\": \"customer\" or \"supplier\", \
 \"amount_value\": number or null, \"amount_unit\": \"percent\" or \"usd\" or null, \
 \"amount_basis\": string or null, \"fiscal_year\": integer or null, \"quote\": string}]}. \
@@ -55,7 +55,11 @@ pub fn parse_output(stdout: &str) -> Result<Vec<RawRelation>, ExtractError> {
     if envelope.get("is_error").and_then(Value::as_bool) == Some(true) {
         return Err(ExtractError::Api { status: 0, body: result.to_string() });
     }
-    // The model may wrap the object in a code fence or a sentence. Take the outermost braces.
+    parse_answer(result)
+}
+
+/// The model may wrap the object in a code fence or a sentence. Take the outermost braces. Pure.
+pub fn parse_answer(result: &str) -> Result<Vec<RawRelation>, ExtractError> {
     let (start, end) = (result.find('{'), result.rfind('}'));
     let (Some(start), Some(end)) = (start, end) else {
         return Err(ExtractError::Malformed("no JSON object in the answer".into()));

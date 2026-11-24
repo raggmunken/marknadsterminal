@@ -586,6 +586,7 @@ fn strength(r: &StoredRelation) -> (u8, i64) {
 
 /// Breadth first walk down the supply chain. Each company is read once, from its own
 /// filing (forward) and from the filings of those who name it as a customer (reverse).
+#[allow(clippy::too_many_arguments)]
 async fn crawl(store: &Store, client: &EdgarClient, root: Cik, depth: usize, per_level: usize, reverse_cap: usize, kind: ExtractorKind, since_days: i64) -> Result<()> {
     let mut visited = std::collections::HashSet::new();
     let mut level = vec![root];
